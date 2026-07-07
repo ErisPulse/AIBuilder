@@ -1,0 +1,522 @@
+/* ============================================================
+ * ErisPulse Builder — 基础样式与主题变量
+ *
+ * 原 builder.html 是 erispulse.github.io 的一个视图片段，依赖
+ * 主站的 :root CSS 变量、reset、body 与 .btn 等基础样式。本站为
+ * 独立页面，故把这些基础样式单独抽出，与 builder.css 配合使用。
+ * 变量取值与原站 main.css 保持一致（默认深色主题）。
+ * ============================================================ */
+
+/* ---------- 主题变量（亮色为默认定义，深色在 [data-theme] 覆盖） ---------- */
+:root {
+  --primary: #4fa6de;
+  --primary-rgb: 79, 166, 222;
+  --primary-dark: #3e96ce;
+  --primary-dark-rgb: 62, 150, 206;
+  --accent: #7cc4a8;
+  --accent-rgb: 124, 196, 168;
+  --secondary: #e8b896;
+  --secondary-rgb: 232, 184, 150;
+
+  --text: #2c3e50;
+  --text-rgb: 44, 62, 80;
+  --text-secondary: #5a6c7d;
+  --text-secondary-rgb: 90, 108, 125;
+  --text-light: #ffffff;
+  --text-light-rgb: 255, 255, 255;
+
+  --bg: #f4f7fb;
+  --bg-rgb: 244, 247, 251;
+  --card-bg: #ffffff;
+  --card-bg-rgb: 255, 255, 255;
+  --border: #e6ecf3;
+  --border-rgb: 230, 236, 243;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.03), 0 6px 18px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.05), 0 10px 28px rgba(0, 0, 0, 0.06);
+
+  --radius: 14px;
+  --transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --gradient-primary: linear-gradient(135deg, var(--primary), var(--accent));
+
+  --dark-bg-rgb: 44, 62, 80;
+}
+
+/* ---------- 深色主题（本站默认采用深色） ---------- */
+[data-theme="dark"] {
+  --primary: #62b5e6;
+  --primary-rgb: 98, 181, 230;
+  --primary-dark: #4fa6de;
+  --primary-dark-rgb: 79, 166, 222;
+  --accent: #7cc4a8;
+  --accent-rgb: 124, 196, 168;
+  --secondary: #d4a878;
+  --secondary-rgb: 212, 168, 120;
+
+  --text: #e2e8f0;
+  --text-rgb: 226, 232, 240;
+  --text-secondary: #a0b0c0;
+  --text-secondary-rgb: 160, 176, 192;
+  --text-light: #ffffff;
+  --text-light-rgb: 255, 255, 255;
+
+  --bg: #0e141b;
+  --bg-rgb: 14, 20, 27;
+  --card-bg: #19202a;
+  --card-bg-rgb: 25, 32, 42;
+  --border: #273140;
+  --border-rgb: 39, 49, 64;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.24);
+  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.22), 0 10px 28px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- Reset / 基础 ---------- */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+a {
+  text-decoration: none;
+  color: var(--primary);
+}
+
+/* ---------- 按钮（与原站 .btn 系列保持一致） ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--primary);
+  color: white;
+  padding: 0.55rem 1.2rem;
+  border-radius: 50px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(var(--primary-rgb), 0.1),
+    0 3px 10px rgba(var(--primary-rgb), 0.06);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.12),
+    0 6px 16px rgba(var(--primary-rgb), 0.1);
+}
+
+.btn:active {
+  transform: scale(0.97) translateY(0);
+  box-shadow: 0 1px 2px rgba(var(--primary-rgb), 0.1);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  box-shadow: none;
+}
+
+.btn-outline:hover {
+  background: rgba(var(--primary-rgb), 0.06);
+  transform: translateY(-1px);
+}
+
+/* ---------- 独立站顶部导航栏 ---------- */
+.builder-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1.4rem;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.builder-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.builder-nav-brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+
+.builder-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.builder-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border-radius: 20px;
+  transition: var(--transition);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+
+.builder-nav-link:hover {
+  color: var(--primary);
+  border-color: rgba(var(--primary-rgb), .2);
+  background: rgba(var(--primary-rgb), .06);
+}
+
+.builder-lang-select {
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.builder-lang-select:hover {
+  border-color: var(--primary);
+}
+
+/* 语言下拉按钮 */
+.builder-lang-wrap {
+  position: relative;
+}
+
+.builder-lang-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  z-index: 300;
+  min-width: 140px;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.builder-lang-dropdown.open {
+  display: block;
+}
+
+.builder-lang-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.8rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+  transition: background .15s;
+}
+
+.builder-lang-dropdown button:hover {
+  background: rgba(var(--primary-rgb), .08);
+}
+
+.builder-lang-dropdown button.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ---------- 设置抽屉（右侧滑入） ---------- */
+.builder-settings-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+.builder-settings-drawer.open {
+  pointer-events: auto;
+}
+
+.builder-settings-overlay {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background 0.3s;
+}
+.builder-settings-drawer.open .builder-settings-overlay {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.builder-settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 460px;
+  max-width: 92vw;
+  height: 100vh;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  display: flex;
+  flex-direction: column;
+}
+.builder-settings-drawer.open .builder-settings-panel {
+  transform: translateX(0);
+}
+
+.builder-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.3rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.builder-settings-header .builder-config-modal-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: var(--transition);
+}
+
+.builder-config-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem 1.3rem;
+}
+
+.builder-config-section-title {
+  margin: 1.2rem 0 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.builder-config-section-title:first-of-type {
+  margin-top: 0;
+}
+
+.builder-config-field {
+  margin-bottom: 0.9rem;
+}
+
+.builder-config-field > label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.builder-config-input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.builder-config-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+}
+
+.builder-config-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.builder-config-row .builder-config-input {
+  flex: 1;
+}
+
+/* API Key 行：钥匙孔内嵌 */
+.builder-key-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.builder-key-row .builder-config-input {
+  flex: 1;
+  padding-right: 2.5rem;
+}
+
+.builder-key-row .builder-toggle-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  width: auto;
+  height: auto;
+  font-size: 0.9rem;
+  padding: 4px 6px;
+}
+
+.builder-key-row .builder-toggle-eye:hover {
+  color: var(--primary);
+}
+
+.builder-toggle-eye {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: var(--transition);
+}
+
+.builder-toggle-eye:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.builder-config-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  margin: 0.6rem 0 1rem;
+  cursor: pointer;
+}
+
+.builder-config-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.builder-config-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0.8rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.builder-config-desc a {
+  color: var(--primary);
+}
+
+/* ---------- 全屏 builder 布局 ---------- */
+/* 注：原 builder.css 的 .builder-layout 用 height: calc(100vh - 65px) 铺满
+   导航栏以下区域，这里保持其原始行为，无需额外 flex 覆盖。 */
+.builder-app {
+  min-height: 100vh;
+}
+
+/* markdown 渲染内容基础样式（补齐原站 markdown.css 的关键部分） */
+.builder-msg-content h1,
+.builder-msg-content h2,
+.builder-msg-content h3,
+.builder-msg-content h4 {
+  margin: 0.6em 0 0.35em;
+  line-height: 1.3;
+}
+.builder-msg-content h1 {
+  font-size: 1.25rem;
+}
+.builder-msg-content h2 {
+  font-size: 1.15rem;
+}
+.builder-msg-content h3 {
+  font-size: 1.05rem;
+}
+.builder-msg-content strong {
+  font-weight: 700;
+}
+.builder-msg-content a {
+  color: var(--primary);
+  text-decoration: underline;
+}
