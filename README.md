@@ -1,8 +1,16 @@
 <div align="center">
 
+<img src=".github/assets/ErisPulseLogo.png" width="180" alt="ErisPulse" />
+
 # ErisPulse Builder
 
-AI 模块构建器 · [builder.erisdev.com](https://builder.erisdev.com)
+**AI 模块构建器 —— 用自然语言生成 ErisPulse 模块**
+
+<p>
+  <a href="https://github.com/ErisPulse/AIBuilder"><img src="https://img.shields.io/github/stars/ErisPulse/AIBuilder?style=for-the-badge&logo=github&color=brightgreen" alt="Stars"></a>
+  <a href="https://builder.erisdev.com"><img src="https://img.shields.io/badge/立即体验-builder.erisdev.com-C724B1?style=for-the-badge&logo=webpack&logoColor=white" alt="立即体验"></a>
+  <a href="https://github.com/ErisPulse/ErisPulse"><img src="https://img.shields.io/badge/Powered_by-ErisPulse-FF6B9D?style=for-the-badge&logo=bookstack&logoColor=white" alt="ErisPulse"></a>
+</p>
 
 </div>
 
