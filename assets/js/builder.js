@@ -192,7 +192,7 @@ ErisPulse 是基于 Python 的高性能异步机器人开发框架。当前任�
 - read_document(doc_path)：读取某篇文档完整内容。
 - list_documents()：列出所有文档标题与路径。
 - list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现（用于深入了解 API 细节）。
-- ask_question(questions)：向用户提问。questions 是数组，每项含 question（问题）、options（选项）和可选的 multi（true 时为多选）。可一次问多个相关问题。系统会自动为每个问题追加「自定义答案」。澄清需求时优先用它，不要把多个问题堆在一段文字里。
+- ask_question(questions)：向用户提问。questions 是数组，每项含 question（问题）、options（选项）和可选的 multi（true 时为多选）。注意 options 必须是纯字符串数组（如 ["选项A","选项B"]），不要传对象。可一次问多个相关问题。系统会自动为每个问题追加「自定义答案」。澄清需求时优先用它，不要把多个问题堆在一段文字里。
 
 【职责】
 1. 收到用户需求后，先判断是「模块」（业务逻辑）还是「适配器」（平台对接），不确定时用 ask_question 询问。
@@ -486,7 +486,8 @@ const ASK_QUESTION_SCHEMA = {
               options: {
                 type: "array",
                 items: { type: "string" },
-                description: "选项列表（不要包含「自定义」，系统会自动追加）",
+                description:
+                  '选项列表，每项必须是纯字符串文本（如 ["选项A","选项B"]），禁止传 {label:...} 等对象。不要包含「自定义」，系统会自动追加',
               },
             },
             required: ["question", "options"],
@@ -621,6 +622,28 @@ function fuzzyFindAll(content, oldText) {
   }
 }
 
+/**
+ * 将选项归一化为纯文本。部分模型不遵守 Schema，会把选项传成对象
+ * （如 {label, description}），直接 String() 会得到 "[object Object]"。
+ */
+function normalizeOptionText(o) {
+  if (o == null) return "";
+  if (typeof o === "string") return o.trim();
+  if (typeof o === "object") {
+    for (const k of ["label", "text", "value", "option", "title", "name"]) {
+      if (typeof o[k] === "string" && o[k].trim()) return o[k].trim();
+    }
+    const strVals = Object.values(o).filter((v) => typeof v === "string");
+    if (strVals.length > 0) return strVals.join("：").trim();
+    try {
+      return JSON.stringify(o);
+    } catch (e) {
+      return "";
+    }
+  }
+  return String(o).trim();
+}
+
 async function executeTool(name, args, ctx) {
   switch (name) {
     case "search_docs": {
@@ -717,11 +740,14 @@ async function executeTool(name, args, ctx) {
       const qs = Array.isArray(args.questions) ? args.questions : [];
       if (qs.length === 0) return "（未提供问题）";
       const normalized = qs.map((q, i) => ({
-        key: String((q && q.key) || (q && q.question) || "Q" + (i + 1)),
-        question: String((q && q.question) || ""),
+        key:
+          normalizeOptionText(q && q.key) ||
+          normalizeOptionText(q && q.question) ||
+          "Q" + (i + 1),
+        question: normalizeOptionText(q && q.question),
         multi: !!(q && q.multi),
         options: Array.isArray(q && q.options)
-          ? q.options.map((o) => String(o)).filter((o) => o.trim())
+          ? q.options.map(normalizeOptionText).filter((o) => o)
           : [],
       }));
       if (!ctx || typeof ctx.askQuestions !== "function") {
@@ -1470,7 +1496,9 @@ function formatRequestDetail(args) {
             if (v.question) parts.push(`${escapeHtml(String(v.question))}`);
             if (Array.isArray(v.options) && v.options.length > 0)
               parts.push(
-                `[${v.options.map((o) => escapeHtml(String(o))).join(", ")}]`,
+                `[${v.options
+                  .map((o) => escapeHtml(normalizeOptionText(o)))
+                  .join(", ")}]`,
               );
             if (v.multi)
               parts.push(
