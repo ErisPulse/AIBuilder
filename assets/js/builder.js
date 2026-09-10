@@ -66,7 +66,14 @@ function normalizeApiUrl(url) {
   return u + "/chat/completions";
 }
 
-async function chatOnce(messages, tools) {
+/**
+ * 流式请求一轮对话（SSE 解析 delta.content 与 delta.tool_calls）。
+ * @param {Array} messages 消息列表
+ * @param {Array} tools 工具 Schema 列表
+ * @param {{signal?:AbortSignal, onDelta?:(t:string)=>void}} [opts]
+ * 若服务端不返回 SSE（忽略 stream 参数），自动回退为整包解析。
+ */
+async function chatStream(messages, tools, opts) {
   const b = settings();
   if (!b.api_url) throw new Error(I18n.t("builder.error.noApiUrl"));
   if (!b.api_key) throw new Error(I18n.t("builder.error.noApiKey"));
@@ -77,7 +84,7 @@ async function chatOnce(messages, tools) {
   const body = {
     model: b.model,
     messages: messages,
-    stream: false,
+    stream: true,
   };
   if (tools && tools.length > 0) {
     body.tools = tools;
@@ -93,8 +100,10 @@ async function chatOnce(messages, tools) {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: opts && opts.signal,
     });
   } catch (e) {
+    if (e && e.name === "AbortError") throw e;
     throw new Error(I18n.t("builder.error.network") + " (" + e.message + ")");
   }
 
@@ -116,16 +125,100 @@ async function chatOnce(messages, tools) {
     );
   }
 
-  const data = await res.json();
-  const choice = data.choices && data.choices[0];
-  if (!choice) {
-    throw new Error(I18n.t("builder.error.apiError") + ": empty choices");
+  const onDelta = opts && typeof opts.onDelta === "function" ? opts.onDelta : null;
+
+  // 服务端未返回 SSE：回退整包解析
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  if (!res.body || !ct.includes("text/event-stream")) {
+    const data = await res.json();
+    const choice = data.choices && data.choices[0];
+    if (!choice) {
+      throw new Error(I18n.t("builder.error.apiError") + ": empty choices");
+    }
+    const msg = choice.message || {};
+    if (msg.content && onDelta) onDelta(msg.content);
+    return {
+      role: "assistant",
+      content: msg.content || "",
+      tool_calls: msg.tool_calls || undefined,
+    };
   }
-  const msg = choice.message || {};
+
+  // SSE 流式解析
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  const toolCalls = []; // index -> {id, type, function:{name, arguments}}
+
+  const processPayload = (jsonStr) => {
+    if (!jsonStr || jsonStr === "[DONE]") return;
+    let data;
+    try {
+      data = JSON.parse(jsonStr);
+    } catch (_) {
+      return;
+    }
+    const choice = data.choices && data.choices[0];
+    if (!choice) return;
+    const delta = choice.delta || {};
+    if (delta.content) {
+      content += delta.content;
+      if (onDelta) onDelta(delta.content);
+    }
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx =
+          typeof tc.index === "number" ? tc.index : toolCalls.length;
+        if (!toolCalls[idx]) {
+          toolCalls[idx] = {
+            id: "",
+            type: "function",
+            function: { name: "", arguments: "" },
+          };
+        }
+        if (tc.id) toolCalls[idx].id = tc.id;
+        if (tc.function) {
+          if (tc.function.name)
+            toolCalls[idx].function.name += tc.function.name;
+          if (tc.function.arguments)
+            toolCalls[idx].function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line || line.startsWith(":")) continue;
+        if (line.startsWith("data:")) processPayload(line.slice(5).trim());
+      }
+    }
+    const rest = buffer.trim();
+    if (rest.startsWith("data:")) processPayload(rest.slice(5).trim());
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      // 中断时携带已累积的部分内容，供上层决定是否保留
+      e.partial = {
+        content,
+        tool_calls: toolCalls.length ? toolCalls : undefined,
+      };
+      throw e;
+    }
+    throw new Error(I18n.t("builder.error.network") + " (" + e.message + ")");
+  }
+
   return {
     role: "assistant",
-    content: msg.content || "",
-    tool_calls: msg.tool_calls || undefined,
+    content,
+    tool_calls: toolCalls.length ? toolCalls : undefined,
   };
 }
 
@@ -193,6 +286,7 @@ ErisPulse 是基于 Python 的高性能异步机器人开发框架。当前任�
 - list_documents()：列出所有文档标题与路径。
 - list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现（用于深入了解 API 细节）。
 - ask_question(questions)：向用户提问。questions 是数组，每项含 question（问题）、options（选项）和可选的 multi（true 时为多选）。注意 options 必须是纯字符串数组（如 ["选项A","选项B"]），不要传对象。可一次问多个相关问题。系统会自动为每个问题追加「自定义答案」。澄清需求时优先用它，不要把多个问题堆在一段文字里。
+- web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。查询外部资料、调用开放 API 时使用；ErisPulse 文档仍优先用 search_docs。
 
 【职责】
 1. 收到用户需求后，先判断是「模块」（业务逻辑）还是「适配器」（平台对接），不确定时用 ask_question 询问。
@@ -228,6 +322,7 @@ function buildGenerateSystemPrompt() {
 - read_document(doc_path)：读取某篇文档的完整内容。当你已从检索结果或索引中确定要看哪篇文档时使用。
 - list_documents()：列出所有可用文档的标题与路径。
 - list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现。
+- web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。ErisPulse 文档仍优先用 search_docs。
 - write_file(path, content)：写入一个生成的文件（覆盖已存在）。适合创建新文件或大幅重写。
 - patch_file(path, old_text, new_text, replace_all)：在已有文件中模糊替换片段。适合小幅修改（改名、加一行、调整参数）。采用模糊匹配（忽略多余空白差异），old_text 须能唯一定位。
 - read_file(path)：读取一个已生成文件的当前完整内容。修改前建议先读取确认。
@@ -348,6 +443,35 @@ const READ_TOOL_SCHEMAS = [
           file_path: { type: "string", description: "源码文件路径（来自 list_source_files）" },
         },
         required: ["file_path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_fetch",
+      description:
+        "联网请求：从互联网获取 URL 内容或调用 HTTP API（浏览器直连）。适合查询资料、读取网页、调用开放 API。注意：受浏览器 CORS 限制，无 CORS 头的站点会失败；ErisPulse 文档请优先用 search_docs",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "完整的 http/https URL" },
+          method: {
+            type: "string",
+            enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+            description: "HTTP 方法，默认 GET",
+          },
+          headers: {
+            type: "object",
+            additionalProperties: { type: "string" },
+            description: "可选，请求头键值对",
+          },
+          body: {
+            type: "string",
+            description: "可选，请求体（POST/PUT 等使用）",
+          },
+        },
+        required: ["url"],
       },
     },
   },
@@ -644,8 +768,107 @@ function normalizeOptionText(o) {
   return String(o).trim();
 }
 
+const WEB_FETCH_TIMEOUT_MS = 30000;
+const WEB_FETCH_MAX_CHARS = 8000;
+
+/**
+ * 联网能力守卫：设置开关 + 首次确认（可记住选择）
+ */
+async function ensureWebFetchAllowed() {
+  const b = settings();
+  if (b.webTool === false) return { ok: false, disabled: true };
+  if (b.webToolConsent === true) return { ok: true };
+  const result = await showConfirmModal(I18n.t("builder.webFetch.confirm"), {
+    checkboxLabel: I18n.t("builder.webFetch.remember"),
+  });
+  if (!result.ok) return { ok: false };
+  if (result.checked) {
+    b.webToolConsent = true;
+    persist();
+  }
+  return { ok: true };
+}
+
+/**
+ * web_fetch 工具实现：浏览器直连 fetch，不做代理。
+ * 失败（CORS/超时/非 2xx）时返回说明文本，供 AI 自行调整策略。
+ */
+async function doWebFetch(args) {
+  const allowed = await ensureWebFetchAllowed();
+  if (!allowed.ok) {
+    return allowed.disabled
+      ? I18n.t("builder.webFetch.disabled")
+      : I18n.t("builder.webFetch.denied");
+  }
+
+  const url = String((args && args.url) || "").trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return "错误：url 必须以 http:// 或 https:// 开头";
+  }
+  const method = String((args && args.method) || "GET").toUpperCase();
+  const headers = { Accept: "application/json, text/html;q=0.9, */*;q=0.8" };
+  if (args && args.headers && typeof args.headers === "object") {
+    for (const [k, v] of Object.entries(args.headers)) {
+      if (typeof v === "string") headers[k] = v;
+    }
+  }
+  const body =
+    method === "GET" || method === "HEAD"
+      ? undefined
+      : String((args && args.body) ?? "");
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), WEB_FETCH_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(url, { method, headers, body, signal: ctrl.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    const timedOut = e && e.name === "AbortError";
+    return (
+      "请求失败：" +
+      (timedOut
+        ? "超时（" + WEB_FETCH_TIMEOUT_MS / 1000 + " 秒）"
+        : I18n.t("builder.webFetch.cors")) +
+      " (" +
+      ((e && e.message) || "unknown") +
+      ")。" +
+      I18n.t("builder.webFetch.fallback")
+    );
+  }
+  clearTimeout(timer);
+
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  let text = await res.text().catch(() => "");
+  if (ct.includes("json")) {
+    try {
+      text = JSON.stringify(JSON.parse(text), null, 2);
+    } catch (_) {}
+  }
+  let out =
+    "HTTP " +
+    res.status +
+    " " +
+    (res.statusText || "") +
+    (ct ? "\nContent-Type: " + ct : "") +
+    "\n\n";
+  if (text.length > WEB_FETCH_MAX_CHARS) {
+    out +=
+      text.slice(0, WEB_FETCH_MAX_CHARS) +
+      "\n…（内容过长已截断，原文共 " +
+      text.length +
+      " 字符）";
+  } else {
+    out += text;
+  }
+  return out;
+}
+
 async function executeTool(name, args, ctx) {
   switch (name) {
+    case "web_fetch": {
+      return await doWebFetch(args);
+    }
     case "search_docs": {
       const topK = Math.max(1, Math.min(20, args.top_k || 5));
       return await MCP.callTool("search_docs", {
@@ -797,6 +1020,12 @@ function isStartCommand(text) {
   return false;
 }
 
+let activeAbort = null; // 当前生成的 AbortController（供「停止」按钮调用）
+
+function stopGeneration() {
+  if (activeAbort) activeAbort.abort();
+}
+
 /**
  * 执行一轮 AI 生成（根据当前 phase 选择工具与系统提示词）
  * @param {string} requirement 用户输入的可见文本
@@ -817,54 +1046,85 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
   conversation.push(userMsg);
 
   const MAX_ROUNDS = 30;
+  const abort = new AbortController();
+  activeAbort = abort;
+  const streamOpts = {
+    signal: abort.signal,
+    onDelta: (t) => onProgress({ type: "delta", text: t }),
+  };
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const assistantMsg = await chatOnce(messages, tools);
+  try {
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (abort.signal.aborted) break;
 
-    if (assistantMsg.content) {
-      onProgress({ type: "text", text: assistantMsg.content });
-    }
-
-    messages.push(assistantMsg);
-    conversation.push(assistantMsg);
-
-    if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-      break;
-    }
-
-    for (const call of assistantMsg.tool_calls) {
-      const fn = call.function && call.function.name;
-      let args = {};
+      onProgress({ type: "stream_start" });
+      let assistantMsg;
       try {
-        args = call.function.arguments
-          ? JSON.parse(call.function.arguments)
-          : {};
+        assistantMsg = await chatStream(messages, tools, streamOpts);
       } catch (e) {
-        args = {};
+        if (e && e.name === "AbortError") {
+          // 中断：保留已流式输出的部分内容（无工具调用时才可安全入上下文）
+          const partial = e.partial || {};
+          if (
+            partial.content &&
+            partial.content.trim() &&
+            !partial.tool_calls
+          ) {
+            const pmsg = { role: "assistant", content: partial.content };
+            messages.push(pmsg);
+            conversation.push(pmsg);
+          }
+          onProgress({ type: "stream_end", aborted: true });
+          onProgress({ type: "aborted" });
+          return { files: { ...generatedFiles }, finalized, aborted: true };
+        }
+        throw e;
+      }
+      onProgress({ type: "stream_end" });
+
+      messages.push(assistantMsg);
+      conversation.push(assistantMsg);
+
+      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+        break;
       }
 
-      onProgress({ type: "tool", tool: fn, args });
+      for (const call of assistantMsg.tool_calls) {
+        const fn = call.function && call.function.name;
+        let args = {};
+        try {
+          args = call.function.arguments
+            ? JSON.parse(call.function.arguments)
+            : {};
+        } catch (e) {
+          args = {};
+        }
 
-      let result;
-      try {
-        result = await executeTool(fn, args, ctx);
-      } catch (e) {
-        result = "工具执行出错: " + e.message;
+        onProgress({ type: "tool", tool: fn, args });
+
+        let result;
+        try {
+          result = await executeTool(fn, args, ctx);
+        } catch (e) {
+          result = "工具执行出错: " + e.message;
+        }
+
+        onProgress({ type: "tool_result", tool: fn, result });
+
+        const toolMsg = {
+          role: "tool",
+          tool_call_id: call.id || "",
+          name: fn,
+          content: String(result),
+        };
+        messages.push(toolMsg);
+        conversation.push(toolMsg);
       }
 
-      onProgress({ type: "tool_result", tool: fn, result });
-
-      const toolMsg = {
-        role: "tool",
-        tool_call_id: call.id || "",
-        name: fn,
-        content: String(result),
-      };
-      messages.push(toolMsg);
-      conversation.push(toolMsg);
+      if (finalized) break;
     }
-
-    if (finalized) break;
+  } finally {
+    activeAbort = null;
   }
 
   return { files: { ...generatedFiles }, finalized };
@@ -1362,17 +1622,42 @@ function hideTyping(messagesEl) {
 /**
  * 统一确认弹窗（替代浏览器 confirm）
  */
-function showConfirmModal(msg) {
+/**
+ * 确认弹窗。opts.checkboxLabel 传入时额外渲染一个复选框，
+ * 返回值从 boolean 变为 {ok, checked}；不传时保持 boolean 兼容旧调用。
+ */
+function showConfirmModal(msg, opts) {
   return new Promise((resolve) => {
     const modal = $("builder-confirm-modal");
     const msgEl = $("builder-confirm-msg");
     const okBtn = $("builder-confirm-ok");
     const cancelBtn = $("builder-confirm-cancel");
+    const useCheckbox = !!(opts && opts.checkboxLabel);
     if (!modal) {
-      resolve(false);
+      resolve(useCheckbox ? { ok: false, checked: false } : false);
       return;
     }
     if (msgEl) msgEl.textContent = msg;
+
+    let chk = null;
+    const oldChk = modal.querySelector(".builder-confirm-check");
+    if (oldChk) oldChk.remove();
+    if (useCheckbox) {
+      const chkWrap = document.createElement("label");
+      chkWrap.className = "builder-confirm-check";
+      chk = document.createElement("input");
+      chk.type = "checkbox";
+      const span = document.createElement("span");
+      span.textContent = opts.checkboxLabel;
+      chkWrap.appendChild(chk);
+      chkWrap.appendChild(span);
+      const actions = modal.querySelector(".builder-confirm-actions");
+      if (actions && actions.parentNode === modal) {
+        modal.insertBefore(chkWrap, actions);
+      } else {
+        modal.appendChild(chkWrap);
+      }
+    }
     modal.style.display = "flex";
 
     const close = (result) => {
@@ -1380,7 +1665,11 @@ function showConfirmModal(msg) {
       okBtn.removeEventListener("click", onOk);
       cancelBtn.removeEventListener("click", onCancel);
       modal.removeEventListener("click", onBackdrop);
-      resolve(result);
+      resolve(
+        useCheckbox
+          ? { ok: result, checked: !!(chk && chk.checked) }
+          : result,
+      );
     };
     const onOk = () => close(true);
     const onCancel = () => close(false);
@@ -1556,6 +1845,8 @@ function iconForTool(tool) {
       return '<i class="fas fa-check"></i>';
     case "ask_question":
       return '<i class="fas fa-circle-question"></i>';
+    case "web_fetch":
+      return '<i class="fas fa-globe"></i>';
     default:
       return '<i class="fas fa-wrench"></i>';
   }
@@ -1563,6 +1854,7 @@ function iconForTool(tool) {
 
 function kindForTool(tool) {
   if (tool === "search_docs") return "search";
+  if (tool === "web_fetch") return "search";
   if (tool === "read_document") return "read";
   if (tool === "write_file") return "write";
   if (tool === "patch_file") return "write";
@@ -1591,6 +1883,8 @@ function formatToolDetail(tool, args) {
       return args && args.doc_path ? "doc: " + args.doc_path : "";
     if (tool === "search_docs")
       return args && args.query ? "q: " + args.query : "";
+    if (tool === "web_fetch")
+      return args && args.url ? args.url : "";
     if (tool === "ask_question") {
       const n = Array.isArray(args && args.questions)
         ? args.questions.length
@@ -1786,11 +2080,19 @@ let sending = false;
 function setSending(v) {
   sending = v;
   const btn = $("builder-send");
-  if (btn) {
-    btn.disabled = v;
-    const span = btn.querySelector("span");
-    if (span) span.textContent = I18n.t(v ? "builder.sending" : "builder.send");
+  if (!btn) return;
+  // 生成中按钮变「停止」；停止元素只注入一次
+  let stopEl = btn.querySelector(".builder-send-stop");
+  if (!stopEl) {
+    stopEl = document.createElement("span");
+    stopEl.className = "builder-send-stop";
+    stopEl.innerHTML =
+      '<i class="fas fa-square"></i>' + escapeHtml(I18n.t("builder.stop"));
+    btn.appendChild(stopEl);
   }
+  btn.classList.toggle("sending", v);
+  // 生成中按钮保持可点击（充当停止键）
+  btn.disabled = false;
 }
 
 function bindConfigInputs() {
@@ -1827,6 +2129,17 @@ function bindConfigInputs() {
     persistChk.checked = !!b.persistKey;
     persistChk.addEventListener("change", () => {
       b.persistKey = persistChk.checked;
+      persist();
+    });
+  }
+
+  // 联网请求开关（关闭时撤销已记住的授权）
+  const webChk = $("builder-web-tool");
+  if (webChk) {
+    webChk.checked = b.webTool !== false;
+    webChk.addEventListener("change", () => {
+      b.webTool = webChk.checked;
+      if (!webChk.checked) b.webToolConsent = false;
       persist();
     });
   }
@@ -1984,7 +2297,7 @@ function bindSessionIO() {
 function bindMobileDrawer() {
   const menuBtn = $("builder-mobile-menu");
   const overlay = $("builder-mobile-overlay");
-  const panel = document.querySelector(".builder-files-panel");
+  const panel = document.querySelector(".builder-sidebar");
   if (!menuBtn || !overlay || !panel) return;
 
   const open = () => {
@@ -2009,7 +2322,11 @@ function bindChatActions() {
   const clearBtn = $("builder-clear");
 
   const send = async () => {
-    if (sending) return;
+    if (sending) {
+      // 生成中点击发送按钮 = 停止
+      stopGeneration();
+      return;
+    }
     const text = ((input && input.value) || "").trim();
     // 没有文本且没有附件时不发送
     const hasUploads = pendingUploads.length > 0;
@@ -2046,6 +2363,7 @@ function bindChatActions() {
       const msgWrap = welcome.closest(".builder-msg");
       if (msgWrap) msgWrap.remove();
     }
+    updateEmptyState();
 
     // 文档检索由 MCP 负责，无需本地预加载提示
 
@@ -2088,15 +2406,46 @@ function bindChatActions() {
         askQuestions: (qs) => renderQuestionForm(messagesEl, qs),
       };
       let currentProgressWrap = null; // 跟踪当前工具调用的进度条目（供展开详情）
+      // 流式气泡状态（stream_start → delta… → stream_end）
+      let liveMsgContent = null;
+      let liveTextEl = null;
+      let liveRaw = "";
+      const liveReset = () => {
+        liveMsgContent = null;
+        liveTextEl = null;
+        liveRaw = "";
+      };
       await runGeneration(
         text,
         (event) => {
           hideTyping(messagesEl);
-          if (event.type === "text") {
-            if (event.text && event.text.trim()) {
-              appendMessage(messagesEl, "bot", event.text);
+          if (event.type === "stream_start") {
+            liveReset();
+          } else if (event.type === "delta") {
+            if (!liveMsgContent) {
+              liveMsgContent = appendMessage(messagesEl, "bot", "");
+              liveMsgContent.classList.add("streaming");
+              liveTextEl = document.createElement("div");
+              liveTextEl.className = "builder-msg-stream-text";
+              liveMsgContent.appendChild(liveTextEl);
             }
-            showTyping(messagesEl);
+            liveRaw += event.text || "";
+            liveTextEl.textContent = liveRaw;
+            scrollToBottom(messagesEl);
+          } else if (event.type === "stream_end") {
+            if (liveMsgContent) {
+              if (liveRaw.trim()) {
+                liveMsgContent.classList.remove("streaming");
+                liveMsgContent.innerHTML = renderMarkdown(liveRaw);
+              } else {
+                const wrap = liveMsgContent.closest(".builder-msg");
+                if (wrap) wrap.remove();
+              }
+              liveReset();
+            }
+            if (!event.aborted) showTyping(messagesEl);
+          } else if (event.type === "aborted") {
+            appendSystemMessage(messagesEl, I18n.t("builder.stopped"));
           } else if (event.type === "tool") {
             if (event.tool === "ask_question") {
               // 问题表单由工具内部渲染，不重复显示进度行
@@ -2212,7 +2561,14 @@ function bindChatActions() {
     });
     // 根据 sendMode 决定发送/换行键位
     input.addEventListener("keydown", (e) => {
+      // 生成中按 Esc 停止
+      if (e.key === "Escape" && sending) {
+        e.preventDefault();
+        stopGeneration();
+        return;
+      }
       if (e.key !== "Enter") return;
+      if (sending) return; // 生成中 Enter 不触发发送（停止请用按钮或 Esc）
       const isCtrl = e.ctrlKey || e.metaKey;
       if (sendMode === "ctrlEnter") {
         // Ctrl+Enter 发送，纯 Enter 换行
@@ -2258,6 +2614,7 @@ function bindChatActions() {
         '<div class="builder-msg-content" id="builder-welcome"></div>';
       messagesEl.appendChild(welcomeMsg);
       renderWelcome();
+      updateEmptyState();
       resetAll();
       clearPendingUploads();
       updateFileList();
@@ -2656,46 +3013,161 @@ function deleteSession(id) {
   }
 }
 
+async function clearAllSessions() {
+  const ok = await showConfirmModal(I18n.t("builder.clearAllConfirm"));
+  if (!ok) return;
+  sessions = {};
+  saveSessions();
+  newSession();
+}
+
+const SESSION_GROUP_ORDER = ["today", "yesterday", "withinWeek", "earlier"];
+
+function sessionGroupKey(ts) {
+  const DAY = 86400000;
+  const startOfDay = (x) => {
+    const d = new Date(x);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const diff = Math.floor(
+    (startOfDay(Date.now()) - startOfDay(ts || 0)) / DAY,
+  );
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  if (diff < 7) return "withinWeek";
+  return "earlier";
+}
+
+function startSessionRename(item, titleSpan, id) {
+  const current = (sessions[id] && sessions[id].title) || "";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "builder-session-rename-input";
+  input.value = current;
+  titleSpan.replaceWith(input);
+  input.focus();
+  input.select();
+  const commit = () => {
+    const val = input.value.trim();
+    if (val && sessions[id]) {
+      sessions[id].title = val;
+      saveSessions();
+    }
+    renderSessionList();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === "Escape") {
+      input.value = current;
+      input.blur();
+    }
+  });
+  input.addEventListener("blur", commit);
+  input.addEventListener("click", (e) => e.stopPropagation());
+}
+
 function renderSessionList() {
   const list = $("builder-sessions-list");
   if (!list) return;
   list.innerHTML = "";
-  const ids = Object.keys(sessions).sort(
-    (a, b) => (sessions[b].updatedAt || 0) - (sessions[a].updatedAt || 0),
-  );
-  if (ids.length === 0) {
+  if (Object.keys(sessions).length === 0) {
     const p = document.createElement("p");
     p.className = "builder-empty";
     p.textContent = I18n.t("builder.noSessions");
     list.appendChild(p);
     return;
   }
+  // 按更新时间倒序，再按「今天 / 昨天 / 7 天内 / 更早」分组
+  const ids = Object.keys(sessions).sort(
+    (a, b) => (sessions[b].updatedAt || 0) - (sessions[a].updatedAt || 0),
+  );
+  const groups = {};
   for (const id of ids) {
-    const s = sessions[id];
-    const item = document.createElement("div");
-    item.className =
-      "builder-session-item" + (id === activeSessionId ? " active" : "");
-    item.dataset.id = id;
-    const ic = document.createElement("i");
-    ic.className = "fas fa-message";
-    const title = document.createElement("span");
-    title.className = "builder-session-title";
-    title.textContent = s.title || I18n.t("builder.newSession");
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "builder-session-del";
-    del.innerHTML = '<i class="fas fa-times"></i>';
-    del.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const ok = await showConfirmModal(I18n.t("builder.deleteSessionConfirm"));
-      if (ok) deleteSession(id);
-    });
-    item.addEventListener("click", () => switchSession(id));
-    item.appendChild(ic);
-    item.appendChild(title);
-    item.appendChild(del);
-    list.appendChild(item);
+    const g = sessionGroupKey(sessions[id].updatedAt);
+    (groups[g] = groups[g] || []).push(id);
   }
+  for (const g of SESSION_GROUP_ORDER) {
+    const gIds = groups[g];
+    if (!gIds || gIds.length === 0) continue;
+    const header = document.createElement("div");
+    header.className = "builder-session-group";
+    header.textContent = I18n.t("builder.session." + g);
+    list.appendChild(header);
+    for (const id of gIds) {
+      const s = sessions[id];
+      const item = document.createElement("div");
+      item.className =
+        "builder-session-item" + (id === activeSessionId ? " active" : "");
+      item.dataset.id = id;
+      const ic = document.createElement("i");
+      ic.className = "fas fa-message";
+      const title = document.createElement("span");
+      title.className = "builder-session-title";
+      title.textContent = s.title || I18n.t("builder.newSession");
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.className = "builder-session-rename";
+      rename.title = I18n.t("builder.renameSession");
+      rename.innerHTML = '<i class="fas fa-pen"></i>';
+      rename.addEventListener("click", (e) => {
+        e.stopPropagation();
+        startSessionRename(item, title, id);
+      });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "builder-session-del";
+      del.innerHTML = '<i class="fas fa-times"></i>';
+      del.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const ok = await showConfirmModal(
+          I18n.t("builder.deleteSessionConfirm"),
+        );
+        if (ok) deleteSession(id);
+      });
+      item.addEventListener("click", () => switchSession(id));
+      item.appendChild(ic);
+      item.appendChild(title);
+      item.appendChild(rename);
+      item.appendChild(del);
+      list.appendChild(item);
+    }
+  }
+}
+
+function bindThemeToggle() {
+  const themeBtn = $("builder-theme-toggle");
+  if (!themeBtn) return;
+  const applyIcon = () => {
+    const cur =
+      document.documentElement.getAttribute("data-theme") || "dark";
+    themeBtn.innerHTML =
+      cur === "dark"
+        ? '<i class="fas fa-sun"></i>'
+        : '<i class="fas fa-moon"></i>';
+  };
+  applyIcon();
+  themeBtn.addEventListener("click", () => {
+    const cur =
+      document.documentElement.getAttribute("data-theme") || "dark";
+    const next = cur === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("erispulse-builder-theme", next);
+    } catch (e) {}
+    applyIcon();
+  });
+}
+
+/**
+ * 空会话态管理：欢迎消息存在时聊天区进入 hero 居中态
+ */
+function updateEmptyState() {
+  const chat = document.querySelector(".builder-chat");
+  if (!chat) return;
+  chat.classList.toggle("is-empty", !!$("builder-welcome"));
 }
 
 /**
@@ -2787,6 +3259,7 @@ function renderHistory(messagesEl) {
       '<i class="fas fa-check"></i> ' + I18n.t("builder.done"),
     );
   }
+  updateEmptyState();
   scrollToBottom(messagesEl);
 }
 
@@ -3291,7 +3764,9 @@ export function setupBuilder() {
   bindChatActions();
   bindMobileDrawer();
   bindSessionIO();
+  bindThemeToggle();
   renderWelcome();
+  updateEmptyState();
 
   // 会话初始化
   const newBtn = $("builder-new-session");
@@ -3299,6 +3774,12 @@ export function setupBuilder() {
     newBtn.addEventListener("click", () => {
       newSession();
       $("builder-input").focus();
+    });
+  }
+  const clearSessionsBtn = $("builder-clear-sessions");
+  if (clearSessionsBtn) {
+    clearSessionsBtn.addEventListener("click", () => {
+      clearAllSessions();
     });
   }
   if (!activeSessionId || !sessions[activeSessionId]) {

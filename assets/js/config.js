@@ -46,6 +46,9 @@ export const CONFIG = {
       model: "",
       persistKey: true,
       sendMode: "enter",
+      // 联网请求（web_fetch）：开关 + 用户授权记忆
+      webTool: true,
+      webToolConsent: false,
       // MCP 服务列表（可多个，用户可增删启停）
       mcpServers: [
         {

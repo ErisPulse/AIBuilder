@@ -7,72 +7,93 @@
  * 变量取值与原站 main.css 保持一致（默认深色主题）。
  * ============================================================ */
 
-/* ---------- 主题变量（亮色为默认定义，深色在 [data-theme] 覆盖） ---------- */
+/* ---------- 主题变量（亮色为默认定义，深色在 [data-theme] 覆盖） ----------
+   设计语言：赛璐璐（cel-shading）萌系 —— 粉白蓝平涂 + 深色描边 + 实心硬投影 */
 :root {
-  --primary: #4fa6de;
-  --primary-rgb: 79, 166, 222;
-  --primary-dark: #3e96ce;
-  --primary-dark-rgb: 62, 150, 206;
-  --accent: #7cc4a8;
-  --accent-rgb: 124, 196, 168;
-  --secondary: #e8b896;
-  --secondary-rgb: 232, 184, 150;
+  --primary: #5bb0e6;
+  --primary-rgb: 91, 176, 230;
+  --primary-dark: #47a0da;
+  --primary-dark-rgb: 71, 160, 218;
+  --accent: #ff8fab;
+  --accent-rgb: 255, 143, 171;
+  --secondary: #f9a8c0;
+  --secondary-rgb: 249, 168, 192;
+
+  /* 赛璐璐专属：描边与粉调色块 */
+  --pink: #ff8fab;
+  --pink-rgb: 255, 143, 171;
+  --pink-soft: #ffd3de;
+  --pink-soft-rgb: 255, 211, 222;
+  --pink-fade: rgba(255, 143, 171, 0.12);
+  --outline: #2c3e50;
+  --outline-fade: rgba(44, 62, 80, 0.22);
+  --sidebar-bg: #ffedf3;
 
   --text: #2c3e50;
   --text-rgb: 44, 62, 80;
-  --text-secondary: #5a6c7d;
-  --text-secondary-rgb: 90, 108, 125;
+  --text-secondary: #6c7e92;
+  --text-secondary-rgb: 108, 126, 146;
   --text-light: #ffffff;
   --text-light-rgb: 255, 255, 255;
 
-  --bg: #f4f7fb;
-  --bg-rgb: 244, 247, 251;
+  --bg: #fff7fa;
+  --bg-rgb: 255, 247, 250;
   --card-bg: #ffffff;
   --card-bg-rgb: 255, 255, 255;
-  --border: #e6ecf3;
-  --border-rgb: 230, 236, 243;
+  --border: #f5d8e2;
+  --border-rgb: 245, 216, 226;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.02);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.03), 0 6px 18px rgba(0, 0, 0, 0.04);
-  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.05), 0 10px 28px rgba(0, 0, 0, 0.06);
+  /* 硬投影：实心色块偏移，无模糊（贴纸感） */
+  --shadow-sm: 2px 2px 0 var(--outline-fade);
+  --shadow-md: 3px 3px 0 var(--outline-fade);
+  --shadow-card: 3px 3px 0 var(--pink-soft);
+  --shadow-hover: 5px 5px 0 var(--pink-soft);
 
-  --radius: 14px;
-  --transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  --gradient-primary: linear-gradient(135deg, var(--primary), var(--accent));
+  --radius: 18px;
+  --transition: all 0.18s ease;
+  --gradient-primary: none;
 
   --dark-bg-rgb: 44, 62, 80;
 }
 
-/* ---------- 深色主题（本站默认采用深色） ---------- */
+/* ---------- 深色主题（赛璐璐夜间版：深蓝紫底 + 同套硬投影） ---------- */
 [data-theme="dark"] {
-  --primary: #62b5e6;
-  --primary-rgb: 98, 181, 230;
-  --primary-dark: #4fa6de;
-  --primary-dark-rgb: 79, 166, 222;
-  --accent: #7cc4a8;
-  --accent-rgb: 124, 196, 168;
-  --secondary: #d4a878;
-  --secondary-rgb: 212, 168, 120;
+  --primary: #6cb9ea;
+  --primary-rgb: 108, 185, 234;
+  --primary-dark: #5bb0e6;
+  --primary-dark-rgb: 91, 176, 230;
+  --accent: #ff9fb8;
+  --accent-rgb: 255, 159, 184;
+  --secondary: #e8a3be;
+  --secondary-rgb: 232, 163, 190;
 
-  --text: #e2e8f0;
-  --text-rgb: 226, 232, 240;
-  --text-secondary: #a0b0c0;
-  --text-secondary-rgb: 160, 176, 192;
+  --pink: #ff9fb8;
+  --pink-rgb: 255, 159, 184;
+  --pink-soft: rgba(255, 159, 184, 0.35);
+  --pink-soft-rgb: 255, 159, 184;
+  --pink-fade: rgba(255, 159, 184, 0.14);
+  --outline: #a9c4de;
+  --outline-fade: rgba(169, 196, 222, 0.28);
+  --sidebar-bg: #141826;
+
+  --text: #e8eef6;
+  --text-rgb: 232, 238, 246;
+  --text-secondary: #a9b8cc;
+  --text-secondary-rgb: 169, 184, 204;
   --text-light: #ffffff;
   --text-light-rgb: 255, 255, 255;
 
-  --bg: #0e141b;
-  --bg-rgb: 14, 20, 27;
-  --card-bg: #19202a;
-  --card-bg-rgb: 25, 32, 42;
-  --border: #273140;
-  --border-rgb: 39, 49, 64;
+  --bg: #171b26;
+  --bg-rgb: 23, 27, 38;
+  --card-bg: #1f2534;
+  --card-bg-rgb: 31, 37, 52;
+  --border: #2c3548;
+  --border-rgb: 44, 53, 72;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.16);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.24);
-  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.22), 0 10px 28px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-md: 3px 3px 0 rgba(0, 0, 0, 0.4);
+  --shadow-card: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  --shadow-hover: 5px 5px 0 rgba(0, 0, 0, 0.45);
 }
 
 /* ---------- Reset / 基础 ---------- */
@@ -86,8 +107,9 @@ html {
 
 body {
   margin: 0;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "DM Sans", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
   line-height: 1.6;
   background-color: var(--bg);
   color: var(--text);
@@ -100,36 +122,34 @@ a {
   color: var(--primary);
 }
 
-/* ---------- 按钮（与原站 .btn 系列保持一致） ---------- */
+/* ---------- 按钮（赛璐璐贴纸风：描边 + 硬投影） ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  background: var(--primary);
-  color: white;
+  background: var(--card-bg);
+  color: var(--text);
   padding: 0.55rem 1.2rem;
   border-radius: 50px;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   font-family: inherit;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  border: none;
+  transition: all 0.15s ease;
+  border: 2px solid var(--outline);
   cursor: pointer;
   position: relative;
-  box-shadow: 0 1px 3px rgba(var(--primary-rgb), 0.1),
-    0 3px 10px rgba(var(--primary-rgb), 0.06);
+  box-shadow: 3px 3px 0 var(--outline-fade);
 }
 
 .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(var(--primary-rgb), 0.12),
-    0 6px 16px rgba(var(--primary-rgb), 0.1);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--outline-fade);
 }
 
 .btn:active {
-  transform: scale(0.97) translateY(0);
-  box-shadow: 0 1px 2px rgba(var(--primary-rgb), 0.1);
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--outline-fade);
 }
 
 .btn:disabled {
@@ -141,85 +161,27 @@ a {
 
 .btn-primary {
   background: var(--primary);
-  color: white;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
 }
 
 .btn-outline {
-  background: transparent;
-  color: var(--primary);
-  border: 1px solid var(--primary);
-  box-shadow: none;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border: 2px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--outline-fade);
 }
 
 .btn-outline:hover {
-  background: rgba(var(--primary-rgb), 0.06);
-  transform: translateY(-1px);
-}
-
-/* ---------- 独立站顶部导航栏 ---------- */
-.builder-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.65rem 1.4rem;
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.builder-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  font-weight: 700;
-  font-size: 1.05rem;
+  background: var(--pink-fade);
   color: var(--text);
-  text-decoration: none;
+  transform: translate(-1px, -1px);
 }
 
-.builder-nav-brand img {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  object-fit: cover;
-  box-shadow: 0 1px 3px rgba(0,0,0,.1);
-}
-
-.builder-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  position: relative;
-}
-
-.builder-nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  font-weight: 500;
-  padding: 0.4rem 0.75rem;
-  border-radius: 20px;
-  transition: var(--transition);
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid transparent;
-  font-family: inherit;
-}
-
-.builder-nav-link:hover {
-  color: var(--primary);
-  border-color: rgba(var(--primary-rgb), .2);
-  background: rgba(var(--primary-rgb), .06);
-}
-
+/* ---------- 独立站顶部导航栏（已移除，品牌/工具移入侧边栏） ---------- */
 .builder-lang-select {
   padding: 0.35rem 0.55rem;
   border-radius: 8px;
@@ -490,10 +452,9 @@ a {
 }
 
 /* ---------- 全屏 builder 布局 ---------- */
-/* 注：原 builder.css 的 .builder-layout 用 height: calc(100vh - 65px) 铺满
-   导航栏以下区域，这里保持其原始行为，无需额外 flex 覆盖。 */
+/* 顶栏已移除：侧边栏 + 聊天区直通整个视口 */
 .builder-app {
-  min-height: 100vh;
+  height: 100vh;
 }
 
 /* markdown 渲染内容基础样式（补齐原站 markdown.css 的关键部分） */

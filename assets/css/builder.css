@@ -6,15 +6,159 @@
 
 .builder-layout {
     display: grid;
-    grid-template-columns: 290px 1fr;
+    grid-template-columns: 280px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
-    gap: 1rem;
+    gap: 0;
     width: 100%;
     max-width: none;
     margin: 0;
-    padding: 1rem;
-    /* 铺满导航栏以下的整个视口 */
-    height: calc(100vh - 65px);
+    padding: 0;
+    /* 全高布局（顶栏已移除，侧边栏直通视口） */
+    height: 100vh;
+    background: var(--bg);
+}
+
+/* ============ 全高侧边栏（赛璐璐贴纸风） ============ */
+.builder-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 0.9rem 0.75rem 0.6rem;
+    background: var(--sidebar-bg);
+    border-right: 2px solid var(--outline);
+}
+
+.builder-sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.15rem 0.35rem 0.7rem;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text);
+    letter-spacing: -0.2px;
+}
+
+.builder-sidebar-brand img {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+    filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.08));
+}
+
+/* 「开启新对话」胶囊大按钮 */
+.builder-new-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--card-bg);
+    border: 2px solid var(--outline);
+    border-radius: 999px;
+    box-shadow: 3px 3px 0 var(--pink-soft);
+    cursor: pointer;
+    transition:
+        transform 0.15s ease,
+        box-shadow 0.15s ease,
+        background 0.15s ease;
+}
+
+.builder-new-chat-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--pink);
+    background: var(--pink-fade);
+}
+
+.builder-new-chat-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--pink-soft);
+}
+
+.builder-sidebar-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin-bottom: 0.9rem;
+}
+
+.builder-sidebar-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 0 0.35rem 0.4rem;
+    letter-spacing: 0.02em;
+}
+
+.builder-sessions-section {
+    flex: 1 1 auto;
+}
+
+.builder-sessions-list {
+    overflow-y: auto;
+    min-height: 80px;
+}
+
+.builder-files-section {
+    flex: 0 0 auto;
+}
+
+.builder-sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding-top: 0.6rem;
+    margin-top: auto;
+    border-top: 1px dashed var(--outline-fade);
+}
+
+.builder-footer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 0.5rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.builder-footer-btn:hover {
+    background: var(--pink-fade);
+    color: var(--text);
+}
+
+.builder-footer-spacer {
+    flex: 1;
+}
+
+/* 底部工具行的语言下拉跟随新容器 */
+.builder-sidebar-footer .builder-lang-wrap {
+    position: relative;
+}
+
+.builder-sidebar-footer .builder-lang-dropdown {
+    bottom: calc(100% + 6px);
+    top: auto;
 }
 
 /* ============ 侧边栏 ============ */
@@ -109,6 +253,18 @@
     overflow-y: auto;
 }
 
+.builder-session-group {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    padding: 0.55rem 0.6rem 0.05rem;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.builder-session-group:first-child {
+    padding-top: 0.1rem;
+}
+
 .builder-session-item {
     display: flex;
     align-items: center;
@@ -148,6 +304,20 @@
     white-space: nowrap;
 }
 
+.builder-session-rename-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8rem;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--card-bg);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    padding: 0.15rem 0.4rem;
+    outline: none;
+}
+
+.builder-session-rename,
 .builder-session-del {
     border: none;
     background: transparent;
@@ -158,11 +328,19 @@
     border-radius: 4px;
     opacity: 0;
     transition: var(--transition);
+    flex-shrink: 0;
 }
 
+.builder-session-item:hover .builder-session-rename,
 .builder-session-item:hover .builder-session-del,
+.builder-session-item.active .builder-session-rename,
 .builder-session-item.active .builder-session-del {
     opacity: 0.7;
+}
+
+.builder-session-rename:hover {
+    opacity: 1;
+    color: var(--primary);
 }
 
 .builder-session-del:hover {
@@ -170,23 +348,16 @@
     color: #ef4444;
 }
 
-/* 会话历史 */
-.builder-files-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    overflow-y: auto;
-    padding: 1.1rem;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
-    min-height: 0;
-    min-width: 0;
+/* 触屏设备：无 hover，操作按钮常显 */
+@media (hover: none) {
+    .builder-session-rename,
+    .builder-session-del {
+        opacity: 0.7;
+    }
 }
 
-/* 旧名兼容 */
-.builder-sidebar {
+/* 旧名兼容（旧类名保留基础弹性，不再承载布局） */
+.builder-files-panel {
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -582,14 +753,27 @@
     justify-content: flex-end;
 }
 
+.builder-confirm-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.builder-confirm-check input {
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
 /* ============ 对话区 ============ */
 .builder-chat {
     display: flex;
     flex-direction: column;
     background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
     overflow: hidden;
     min-height: 0;
     min-width: 0;
@@ -601,15 +785,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.9rem 1.25rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.7rem 1rem;
+    border-bottom: 2px solid var(--outline-fade);
     background: var(--card-bg);
     flex-shrink: 0;
-}
-
-.builder-chat-title-wrap {
-    min-width: 0;
-    flex: 1;
 }
 
 .builder-chat-title-row {
@@ -617,17 +796,6 @@
     align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
-}
-
-.builder-chat-header .section-title {
-    font-size: 1.15rem;
-    margin: 0;
-}
-
-.builder-chat-header .section-subtitle {
-    font-size: 0.8rem;
-    margin: 0.15rem 0 0;
-    color: var(--text-secondary);
 }
 
 /* 移动端菜单按钮（默认隐藏，仅移动端显示） */
@@ -673,7 +841,7 @@
 .builder-phase-toggle {
   display: inline-flex;
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 2px solid var(--outline);
   border-radius: 999px;
   padding: 2.5px;
   gap: 2px;
@@ -702,17 +870,17 @@
 }
 
 .builder-phase-seg.active {
-  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  box-shadow: 1px 1px 0 var(--outline-fade);
 }
 
 .builder-phase-seg.active[data-phase="plan"] {
-  background: rgba(245, 158, 11, .16);
-  color: #d97706;
+  background: var(--primary);
+  color: #ffffff;
 }
 
 .builder-phase-seg.active[data-phase="generate"] {
-  background: rgba(var(--accent-rgb), .18);
-  color: var(--accent);
+  background: var(--pink);
+  color: #ffffff;
 }
 
 /* 设置页内的构建器输入样式 */
@@ -815,14 +983,79 @@
     flex-direction: column;
     gap: 1rem;
     scroll-behavior: smooth;
-    background-color: var(--bg);
-    /* 背景图暂时关闭（资源保留）
-    background-image: url("../img/9998218143800301-b0c5468e-dea6-4806-9218-d201afdfe2b3-gpt_image_2_codex_image_599f78e1-8590-4ebd-b98e-d68b3df9c802_0.png");
-    background-repeat: repeat;
-    background-size: 360px;
-    background-position: top left;
-    background-attachment: scroll;
-    */
+    background: transparent;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    min-width: 0;
+}
+
+/* —— 空会话 hero 态：欢迎语居中 + 输入框悬浮其下（DeepSeek 式） —— */
+.builder-chat.is-empty .builder-messages {
+    flex: 1 1 auto;
+    justify-content: center;
+    align-items: center;
+    padding-bottom: 30vh;
+}
+
+.builder-chat.is-empty .builder-msg {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 1rem;
+    max-width: 620px;
+    animation: builderHeroIn 0.4s ease-out;
+}
+
+.builder-chat.is-empty .builder-msg-avatar {
+    width: 64px;
+    height: 64px;
+    box-shadow: 3px 3px 0 var(--pink-soft);
+}
+
+.builder-chat.is-empty .builder-msg-content {
+    font-size: 1rem;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+/* 列表块内部左对齐（序号对齐），块整体仍居中 */
+.builder-chat.is-empty .builder-msg-content ol,
+.builder-chat.is-empty .builder-msg-content ul {
+    display: inline-block;
+    text-align: left;
+    margin: 0.5em auto;
+    padding-left: 1.3em;
+}
+
+.builder-chat.is-empty .builder-msg-content ol > li,
+.builder-chat.is-empty .builder-msg-content ul > li {
+    text-align: left;
+}
+
+.builder-chat.is-empty .builder-input-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 22vh;
+    transform: translateX(-50%);
+    width: min(680px, 88%);
+    margin: 0;
+    box-shadow: 4px 4px 0 var(--pink-soft);
+    z-index: 5;
+}
+
+@keyframes builderHeroIn {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* 系统提示消息（阶段切换等） */
@@ -862,11 +1095,11 @@
   border-radius: 50%;
   overflow: hidden;
   background: var(--bg);
+  border: 2px solid var(--outline);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.85rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,.08);
 }
 
 .builder-msg-avatar img {
@@ -886,21 +1119,22 @@
   font-size: 0.88rem;
   line-height: 1.65;
   word-break: break-word;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
 }
 
 .builder-msg-bot .builder-msg-content {
   background: var(--card-bg);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-top-left-radius: 4px;
+  border: 2px solid var(--outline);
+  border-bottom-left-radius: 4px;
+  box-shadow: 3px 3px 0 var(--pink-soft);
 }
 
 .builder-msg-user .builder-msg-content {
-  background: linear-gradient(135deg, var(--primary), #3e96ce);
-  color: white;
-  border-top-right-radius: 4px;
-  box-shadow: 0 2px 6px rgba(var(--primary-rgb), .25);
+  background: var(--primary);
+  color: #ffffff;
+  border: 2px solid var(--outline);
+  border-bottom-right-radius: 4px;
+  box-shadow: 3px 3px 0 var(--outline-fade);
 }
 
 .builder-msg-content p {
@@ -1007,7 +1241,6 @@
     background: var(--card-bg);
     border-radius: 10px;
     border: 1px solid var(--border);
-    border-left: 2px solid var(--text-secondary);
     box-shadow: var(--shadow-sm);
     line-height: 1.5;
     transition:
@@ -1171,34 +1404,21 @@
 }
 
 /* 写入完成状态 */
-.builder-progress-item.write.done {
-    border-left-color: var(--accent);
-}
 .builder-progress-item.write.done > i {
     color: var(--accent);
 }
 
 /* 各类型配色 */
-.builder-progress-item.search {
-    border-left-color: #f59e0b;
-}
 .builder-progress-item.search > i {
     color: #f59e0b;
 }
-.builder-progress-item.read {
-    border-left-color: var(--accent);
-}
 .builder-progress-item.read > i {
     color: var(--accent);
-}
-.builder-progress-item.write {
-    border-left-color: var(--primary);
 }
 .builder-progress-item.write > i {
     color: var(--primary);
 }
 .builder-progress-item.done {
-    border-left-color: var(--accent);
     color: var(--accent);
     font-weight: 600;
 }
@@ -1208,7 +1428,6 @@
 
 /* 完成标记（覆盖已有状态） */
 .builder-progress-item.final-done {
-    border-left-color: var(--accent);
     background: rgba(var(--accent-rgb), 0.06);
 }
 .builder-progress-item.final-done i {
@@ -1410,9 +1629,13 @@
   gap: 0.45rem;
   padding: 0.8rem 1.1rem 1rem;
   background: var(--card-bg);
-  border-top: 1px solid var(--border);
+  border: 2px solid var(--outline);
+  border-radius: 22px;
+  box-shadow: 3px 3px 0 var(--pink-soft);
   flex-shrink: 0;
-  box-shadow: 0 -1px 4px rgba(0,0,0,.03);
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto 1rem;
 }
 
 .builder-input-row {
@@ -1553,6 +1776,54 @@
     transform: none !important;
 }
 
+/* 生成中：按钮变「停止」 */
+.builder-send-stop {
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    line-height: 1;
+}
+
+.builder-send-stop i {
+    font-size: 0.62em;
+}
+
+.builder-send.sending .builder-send-stop {
+    display: inline-flex;
+}
+
+.builder-send.sending > i,
+.builder-send.sending > span:not(.builder-send-stop) {
+    display: none !important;
+}
+
+.builder-send.sending .builder-send-mode-tag {
+    pointer-events: none;
+}
+
+/* 流式输出气泡 */
+.builder-msg-stream-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.builder-msg-content.streaming .builder-msg-stream-text::after {
+    content: "▍";
+    margin-left: 2px;
+    opacity: 0.8;
+    animation: builderStreamCursor 1s steps(2) infinite;
+}
+
+@keyframes builderStreamCursor {
+    0%,
+    100% {
+        opacity: 0.8;
+    }
+    50% {
+        opacity: 0;
+    }
+}
+
 /* 发送按钮 + 模式下拉组合 */
 .builder-send-wrap {
     position: relative;
@@ -1638,13 +1909,13 @@
     .builder-layout {
         grid-template-columns: 1fr;
         grid-template-rows: minmax(0, 1fr);
-        height: calc(100vh - 65px);
+        height: 100vh;
         position: relative;
         overflow: hidden;
     }
 
     /* 侧边栏变为可抽屉式弹出 */
-    .builder-files-panel {
+    .builder-sidebar {
         position: absolute;
         top: 0;
         left: 0;
@@ -1652,16 +1923,14 @@
         width: 84%;
         max-width: 320px;
         z-index: 50;
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 0 var(--radius) var(--radius) 0;
+        background: var(--sidebar-bg);
+        border-right: 2px solid var(--outline);
         transform: translateX(-100%);
         transition: transform 0.28s ease;
-        padding: 1rem 0.85rem;
         box-shadow: none;
     }
 
-    .builder-files-panel.show {
+    .builder-sidebar.show {
         transform: translateX(0);
         box-shadow: var(--shadow-hover);
     }
@@ -1685,14 +1954,6 @@
 
     .builder-chat-title-row {
         gap: 0.45rem;
-    }
-
-    .builder-chat-header .section-title {
-        font-size: 1rem;
-    }
-
-    .builder-chat-header .section-subtitle {
-        font-size: 0.72rem;
     }
 
     .builder-phase-seg {
@@ -1745,10 +2006,6 @@
 
     .builder-msg {
         max-width: 95%;
-    }
-
-    .builder-chat-header .section-title {
-        font-size: 0.98rem;
     }
 
     .builder-input {
@@ -1969,6 +2226,7 @@
  * 滚动条美化
  * ============================================================ */
 .builder-files-panel::-webkit-scrollbar,
+.builder-sidebar::-webkit-scrollbar,
 .builder-settings-body::-webkit-scrollbar,
 .builder-messages::-webkit-scrollbar,
 .builder-files-list::-webkit-scrollbar,
@@ -1977,11 +2235,13 @@
 }
 
 .builder-files-panel::-webkit-scrollbar-track,
+.builder-sidebar::-webkit-scrollbar-track,
 .builder-settings-body::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .builder-files-panel::-webkit-scrollbar-thumb,
+.builder-sidebar::-webkit-scrollbar-thumb,
 .builder-settings-body::-webkit-scrollbar-thumb,
 .builder-messages::-webkit-scrollbar-thumb {
   background: var(--border);
@@ -1989,12 +2249,14 @@
 }
 
 .builder-files-panel::-webkit-scrollbar-thumb:hover,
+.builder-sidebar::-webkit-scrollbar-thumb:hover,
 .builder-settings-body::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
 
 /* Firefox */
 .builder-files-panel,
+.builder-sidebar,
 .builder-settings-body {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;

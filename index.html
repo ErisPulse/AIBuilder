@@ -27,7 +27,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
@@ -72,64 +72,39 @@
 
   <body>
     <div class="builder-app">
-      <!-- ============ 顶部导航栏 ============ -->
-      <nav class="builder-nav">
-        <a class="builder-nav-brand" href="https://www.erisdev.com">
-          <img
-            src="https://www.erisdev.com/assets/img/logo.png"
-            alt="ErisPulse"
-          />
-          <span>ErisPulse Builder</span>
-        </a>
-        <div class="builder-nav-actions">
-          <!-- 语言切换 -->
-          <div class="builder-lang-wrap">
-            <button type="button" class="builder-nav-link builder-lang-btn" id="builder-lang-btn" title="Language">
-              <i class="fas fa-globe"></i>
-              <span id="builder-lang-label">ZH</span>
-            </button>
-            <div class="builder-lang-dropdown" id="builder-lang-dropdown"></div>
-          </div>
-          <!-- 配置 -->
-          <button
-            type="button"
-            class="builder-nav-link"
-            id="builder-config-modal-btn"
-          >
-            <i class="fas fa-sliders"></i>
-            <span data-i18n="builder.settingsConfigBtn">配置</span>
-          </button>
-          <!-- GitHub -->
-          <a
-            class="builder-nav-link"
-            href="https://github.com/ErisPulse/AIBuilder"
-            target="_blank"
-            rel="noopener"
-            title="GitHub"
-          >
-            <i class="fab fa-github"></i>
-          </a>
-        </div>
-      </nav>
-
-      <!-- ============ Builder 视图（移植自 builder.html） ============ -->
+      <!-- ============ Builder 视图 ============ -->
       <div id="builder-view" class="view-container builder-view-container">
         <div class="builder-layout">
-          <!-- 会话与文件面板 -->
-          <aside class="builder-files-panel">
+          <!-- ============ 全高侧边栏 ============ -->
+          <aside class="builder-sidebar" id="builder-sidebar">
+            <div class="builder-sidebar-brand">
+              <img
+                src="https://www.erisdev.com/assets/img/logo.png"
+                alt="ErisPulse"
+              />
+              <span>ErisPulse Builder</span>
+            </div>
+            <button
+              type="button"
+              class="builder-new-chat-btn"
+              id="builder-new-session"
+            >
+              <i class="fas fa-plus"></i>
+              <span data-i18n="builder.newChat">开启新对话</span>
+            </button>
+
             <!-- 会话历史 -->
-            <div class="builder-config-card builder-sessions-card">
-              <h3 class="builder-config-title">
-                <i class="fas fa-comments"></i>
+            <div class="builder-sidebar-section builder-sessions-section">
+              <div class="builder-sidebar-head">
                 <span data-i18n="builder.sessions">会话</span>
                 <div class="builder-config-actions">
                   <button
                     type="button"
                     class="builder-icon-btn"
-                    id="builder-new-session"
-                    data-i18n-title="builder.newSession"
+                    id="builder-clear-sessions"
+                    data-i18n-title="builder.clearAllSessions"
                   >
-                    <i class="fas fa-plus"></i>
+                    <i class="fas fa-trash-can"></i>
                   </button>
                   <button
                     type="button"
@@ -179,7 +154,7 @@
                     </div>
                   </div>
                 </div>
-              </h3>
+              </div>
               <div
                 class="builder-sessions-list"
                 id="builder-sessions-list"
@@ -187,9 +162,8 @@
             </div>
 
             <!-- 已生成文件 -->
-            <div class="builder-config-card builder-files-card">
-              <h3 class="builder-config-title">
-                <i class="fas fa-folder-open"></i>
+            <div class="builder-sidebar-section builder-files-section">
+              <div class="builder-sidebar-head">
                 <span data-i18n="builder.generatedFiles">已生成文件</span>
                 <span class="builder-files-count" id="builder-files-count"
                   >0</span
@@ -214,7 +188,7 @@
                     <i class="fas fa-rotate-right"></i>
                   </button>
                 </div>
-              </h3>
+              </div>
               <div class="builder-files-list" id="builder-files-list">
                 <p class="builder-empty" data-i18n="builder.noFiles">
                   尚未生成文件
@@ -238,55 +212,91 @@
                 <span data-i18n="builder.downloadZip">下载 ZIP</span>
               </button>
             </div>
+
+            <!-- 底部工具行 -->
+            <div class="builder-sidebar-footer">
+              <button
+                type="button"
+                class="builder-footer-btn"
+                id="builder-config-modal-btn"
+                data-i18n-title="builder.settingsConfigBtn"
+              >
+                <i class="fas fa-sliders"></i>
+              </button>
+              <div class="builder-lang-wrap">
+                <button
+                  type="button"
+                  class="builder-footer-btn builder-lang-btn"
+                  id="builder-lang-btn"
+                  title="Language"
+                >
+                  <i class="fas fa-globe"></i>
+                  <span id="builder-lang-label">ZH</span>
+                </button>
+                <div
+                  class="builder-lang-dropdown"
+                  id="builder-lang-dropdown"
+                ></div>
+              </div>
+              <a
+                class="builder-footer-btn"
+                href="https://github.com/ErisPulse/AIBuilder"
+                target="_blank"
+                rel="noopener"
+                title="GitHub"
+              >
+                <i class="fab fa-github"></i>
+              </a>
+              <span class="builder-footer-spacer"></span>
+              <button
+                type="button"
+                class="builder-footer-btn"
+                id="builder-theme-toggle"
+                data-i18n-title="builder.themeToggle"
+              >
+                <i class="fas fa-moon"></i>
+              </button>
+            </div>
           </aside>
 
-          <!-- 对话区 -->
+          <!-- ============ 对话区 ============ -->
           <section class="builder-chat">
             <div
               class="builder-mobile-overlay"
               id="builder-mobile-overlay"
             ></div>
             <div class="builder-chat-header">
-              <div class="builder-chat-title-wrap">
-                <div class="builder-chat-title-row">
+              <div class="builder-chat-title-row">
+                <button
+                  type="button"
+                  class="builder-mobile-menu-btn"
+                  id="builder-mobile-menu"
+                  aria-label="Menu"
+                  data-i18n-title="builder.menu"
+                >
+                  <i class="fas fa-bars"></i>
+                </button>
+                <div
+                  class="builder-phase-toggle"
+                  id="builder-phase-toggle"
+                >
                   <button
                     type="button"
-                    class="builder-mobile-menu-btn"
-                    id="builder-mobile-menu"
-                    aria-label="Menu"
-                    data-i18n-title="builder.menu"
+                    class="builder-phase-seg active"
+                    data-phase="plan"
+                    data-i18n="builder.phase.plan"
                   >
-                    <i class="fas fa-bars"></i>
+                    规划
                   </button>
-                  <h2 class="section-title" data-i18n="builder.title">
-                    AI 模块构建器
-                  </h2>
-                  <div
-                    class="builder-phase-toggle"
-                    id="builder-phase-toggle"
+                  <button
+                    type="button"
+                    class="builder-phase-seg"
+                    data-phase="generate"
+                    data-i18n="builder.phase.generate"
                   >
-                    <button
-                      type="button"
-                      class="builder-phase-seg active"
-                      data-phase="plan"
-                      data-i18n="builder.phase.plan"
-                    >
-                      规划
-                    </button>
-                    <button
-                      type="button"
-                      class="builder-phase-seg"
-                      data-phase="generate"
-                      data-i18n="builder.phase.generate"
-                    >
-                      生成
-                    </button>
-                  </div>
+                    生成
+                  </button>
                 </div>
-                <p class="section-subtitle" data-i18n="builder.subtitle">
-                  描述需求，AI 查阅文档后生成完整 ErisPulse
-                  模块代码并打包下载
-                </p>
               </div>
               <button
                 class="btn btn-outline builder-clear-btn"
@@ -496,6 +506,10 @@
           <label class="builder-config-check">
             <input type="checkbox" id="builder-persist-key" />
             <span data-i18n="builder.persistKey">记住密钥（仅本机）</span>
+          </label>
+          <label class="builder-config-check">
+            <input type="checkbox" id="builder-web-tool" />
+            <span data-i18n="builder.webFetch.toggle">允许 AI 联网请求（web_fetch）</span>
           </label>
 
           <!-- ===== MCP 服务 ===== -->
