@@ -47,6 +47,9 @@ export const CONFIG = {
       persistKey: true,
       sendMode: "enter",
        
+      webTool: true,
+      webToolConsent: false,
+       
       mcpServers: [
         {
           id: "builtin-erispulse",

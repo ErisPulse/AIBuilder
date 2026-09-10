@@ -57,6 +57,8 @@ export const I18n = (function () {
       "builder.downloadZip": "下载 ZIP",
       "builder.sessions": "会话",
       "builder.newSession": "新会话",
+      "builder.newChat": "开启新对话",
+      "builder.themeToggle": "切换主题",
       "builder.noSessions": "暂无会话",
       "builder.exportSessions": "导出会话",
       "builder.exportCurrent": "导出当前会话",
@@ -70,6 +72,14 @@ export const I18n = (function () {
       "builder.error.importEmpty": "文件中未找到可导入的会话",
       "builder.deleteSessionConfirm":
         "确定删除该会话？会话内的对话与生成文件将一并清除。",
+      "builder.session.today": "今天",
+      "builder.session.yesterday": "昨天",
+      "builder.session.withinWeek": "7 天内",
+      "builder.session.earlier": "更早",
+      "builder.renameSession": "重命名会话",
+      "builder.clearAllSessions": "清空全部会话",
+      "builder.clearAllConfirm":
+        "确定清空全部会话？所有对话与生成文件将一并清除，且无法恢复。",
       "builder.title": "AI 模块构建器",
       "builder.subtitle":
         "描述需求，AI 查阅文档后生成完整 ErisPulse 模块代码并打包下载",
@@ -80,6 +90,8 @@ export const I18n = (function () {
       "builder.inputPlaceholderGenerate": "补充说明…",
       "builder.send": "发送",
       "builder.sending": "生成中...",
+      "builder.stop": "停止",
+      "builder.stopped": "已停止生成。",
       "builder.writing": "正在写入…",
       "builder.question.custom": "自定义答案...",
       "builder.question.ok": "确定",
@@ -88,6 +100,16 @@ export const I18n = (function () {
       "builder.confirmOk": "确定",
       "builder.tool.ask_question": "提问",
       "builder.tool.confirm_start": "确认开始",
+      "builder.tool.web_fetch": "联网请求",
+      "builder.webFetch.confirm":
+        "AI 请求访问外部网络地址（web_fetch）。允许本次请求吗？",
+      "builder.webFetch.remember": "记住选择，不再询问",
+      "builder.webFetch.disabled": "联网请求已在设置中关闭。",
+      "builder.webFetch.denied":
+        "用户拒绝了本次联网请求。请改用 search_docs 或请用户提供相关内容。",
+      "builder.webFetch.cors": "可能被浏览器 CORS 策略拦截",
+      "builder.webFetch.fallback":
+        "建议改用其他资料来源（如 search_docs），或请用户粘贴相关内容。",
       "builder.confirmStartMsg": "资料准备完毕，是否开始生成？",
       "builder.startCommand": "开始",
       "builder.docsInitHint": "正在初始化文档清单，这个阶段可能较长，请耐心等待…",
@@ -105,7 +127,7 @@ export const I18n = (function () {
       "builder.phaseSwitched": "已进入生成阶段，AI 现在可以写入文件",
       "builder.phaseSwitchedToPlan": "已切换回规划阶段，AI 仅可查阅文档，不能写入文件",
       "builder.welcome":
-        "### AI 模块构建器\n\n我是**小eris**，ErisPulse 官方的 AI 模块构建助手。\n\n我会分两步帮你构建模块：\n\n1. **规划阶段**——告诉我你想构建什么，我会查阅官方文档并与你讨论方案\n2. **生成阶段**——方案确定后，发送「**开始**」进入生成阶段，我会生成完整源码\n\n请先点击右上角「**配置模型**」填写 API 地址与模型。",
+        "### AI 模块构建器\n\n我是**小eris**，ErisPulse 官方的 AI 模块构建助手。\n\n我会分两步帮你构建模块：\n\n1. **规划阶段**——告诉我你想构建什么，我会查阅官方文档并与你讨论方案\n2. **生成阶段**——方案确定后，发送「**开始**」进入生成阶段，我会生成完整源码\n\n请先点击左下角「**配置**」填写 API 地址与模型。",
       "builder.done": "生成完成，可点击「下载 ZIP」获取模块包",
       "builder.error.noApiUrl": "请先填写 API 地址",
       "builder.error.noApiKey": "请先填写 API Key",
@@ -188,6 +210,8 @@ export const I18n = (function () {
       "builder.downloadZip": "Download ZIP",
       "builder.sessions": "Sessions",
       "builder.newSession": "New session",
+      "builder.newChat": "New chat",
+      "builder.themeToggle": "Toggle theme",
       "builder.noSessions": "No sessions yet",
       "builder.exportSessions": "Export sessions",
       "builder.exportCurrent": "Export current session",
@@ -201,6 +225,14 @@ export const I18n = (function () {
       "builder.error.importEmpty": "No importable sessions found in the file",
       "builder.deleteSessionConfirm":
         "Delete this session? Its conversation and generated files will be removed.",
+      "builder.session.today": "Today",
+      "builder.session.yesterday": "Yesterday",
+      "builder.session.withinWeek": "Previous 7 days",
+      "builder.session.earlier": "Earlier",
+      "builder.renameSession": "Rename session",
+      "builder.clearAllSessions": "Clear all sessions",
+      "builder.clearAllConfirm":
+        "Clear all sessions? All conversations and generated files will be removed permanently.",
       "builder.title": "AI Module Builder",
       "builder.subtitle":
         "Describe your needs; the AI looks up docs, then generates a complete ErisPulse module and packages it for download",
@@ -212,6 +244,8 @@ export const I18n = (function () {
       "builder.inputPlaceholderGenerate": "Add details…",
       "builder.send": "Send",
       "builder.sending": "Generating...",
+      "builder.stop": "Stop",
+      "builder.stopped": "Generation stopped.",
       "builder.writing": "Writing…",
       "builder.question.custom": "Custom answer...",
       "builder.question.ok": "OK",
@@ -220,6 +254,16 @@ export const I18n = (function () {
       "builder.confirmOk": "OK",
       "builder.tool.ask_question": "Ask",
       "builder.tool.confirm_start": "Confirm start",
+      "builder.tool.web_fetch": "Web fetch",
+      "builder.webFetch.confirm":
+        "The AI wants to make a web request (web_fetch). Allow this request?",
+      "builder.webFetch.remember": "Remember and don't ask again",
+      "builder.webFetch.disabled": "Web requests are disabled in settings.",
+      "builder.webFetch.denied":
+        "The user denied this web request. Use search_docs instead or ask the user to provide the content.",
+      "builder.webFetch.cors": "possibly blocked by browser CORS policy",
+      "builder.webFetch.fallback":
+        "Try another source (e.g. search_docs), or ask the user to paste the content.",
       "builder.confirmStartMsg": "Materials are ready. Start generating?",
       "builder.startCommand": "start",
       "builder.docsInitHint":
@@ -239,7 +283,7 @@ export const I18n = (function () {
         "Switched to generation phase; the AI can now write files",
       "builder.phaseSwitchedToPlan": "Switched to planning phase; the AI can only read docs, not write files",
       "builder.welcome":
-        "### AI Module Builder\n\nI'm **Xiao-eris**, the official ErisPulse AI module builder assistant.\n\nI'll help you build a module in two steps:\n\n1. **Planning**—tell me what you want to build; I'll consult the docs and discuss a plan with you\n2. **Generation**—once the plan is settled, send “**start**” to enter the generation phase and I'll produce the full source\n\nClick “**Configure model**” in the top-right to set the API URL and model.",
+        "### AI Module Builder\n\nI'm **Xiao-eris**, the official ErisPulse AI module builder assistant.\n\nI'll help you build a module in two steps:\n\n1. **Planning**—tell me what you want to build; I'll consult the docs and discuss a plan with you\n2. **Generation**—once the plan is settled, send “**start**” to enter the generation phase and I'll produce the full source\n\nClick the “**Configure**” icon in the bottom-left sidebar to set the API URL and model.",
       "builder.done": "Done. Click 「Download ZIP」 to get the module package",
       "builder.error.noApiUrl": "Please fill in the API URL first",
       "builder.error.noApiKey": "Please fill in the API Key first",
@@ -320,6 +364,8 @@ export const I18n = (function () {
       "builder.downloadZip": "下載 ZIP",
       "builder.sessions": "會話",
       "builder.newSession": "新會話",
+      "builder.newChat": "開啟新對話",
+      "builder.themeToggle": "切換主題",
       "builder.noSessions": "暫無會話",
       "builder.exportSessions": "匯出會話",
       "builder.exportCurrent": "匯出目前會話",
@@ -333,6 +379,14 @@ export const I18n = (function () {
       "builder.error.importEmpty": "檔案中未找到可匯入的會話",
       "builder.deleteSessionConfirm":
         "確定要刪除該會話？對話與生成檔案將一併清除。",
+      "builder.session.today": "今天",
+      "builder.session.yesterday": "昨天",
+      "builder.session.withinWeek": "7 天內",
+      "builder.session.earlier": "更早",
+      "builder.renameSession": "重新命名會話",
+      "builder.clearAllSessions": "清空全部會話",
+      "builder.clearAllConfirm":
+        "確定清空全部會話？所有對話與生成檔案將一併清除，且無法復原。",
       "builder.title": "AI 模組構建器",
       "builder.subtitle":
         "描述需求，AI 查閱文檔後生成完整 ErisPulse 模組程式碼並打包下載",
@@ -351,6 +405,16 @@ export const I18n = (function () {
       "builder.confirmOk": "確定",
       "builder.tool.ask_question": "提問",
       "builder.tool.confirm_start": "確認開始",
+      "builder.tool.web_fetch": "網路請求",
+      "builder.webFetch.confirm":
+        "AI 請求存取外部網路位址（web_fetch）。允許本次請求嗎？",
+      "builder.webFetch.remember": "記住選擇，不再詢問",
+      "builder.webFetch.disabled": "網路請求已在設定中關閉。",
+      "builder.webFetch.denied":
+        "使用者拒絕了本次網路請求。請改用 search_docs 或請使用者提供相關內容。",
+      "builder.webFetch.cors": "可能被瀏覽器 CORS 政策攔截",
+      "builder.webFetch.fallback":
+        "建議改用其他資料來源（如 search_docs），或請使用者貼上相關內容。",
       "builder.confirmStartMsg": "資料準備完畢，是否開始生成？",
       "builder.startCommand": "開始",
       "builder.docsInitHint": "正在初始化文檔清單，此階段可能較長，請耐心等候…",
@@ -368,7 +432,7 @@ export const I18n = (function () {
       "builder.phaseSwitched": "已進入生成階段，AI 現在可以寫入檔案",
       "builder.phaseSwitchedToPlan": "已切換回規劃階段，AI 僅可查閱文檔，不能寫入檔案",
       "builder.welcome":
-        "### AI 模組構建器\n\n我是**小eris**，ErisPulse 官方的 AI 模組構建助手。\n\n我會分兩步幫你構建模組：\n\n1. **規劃階段**——告訴我你想構建什麼，我會查閱官方文檔並與你討論方案\n2. **生成階段**——方案確定後，發送「**開始**」進入生成階段，我會生成完整原始碼\n\n請先點擊右上角「**設定模型**」填寫 API 位址與模型。",
+        "### AI 模組構建器\n\n我是**小eris**，ErisPulse 官方的 AI 模組構建助手。\n\n我會分兩步幫你構建模組：\n\n1. **規劃階段**——告訴我你想構建什麼，我會查閱官方文檔並與你討論方案\n2. **生成階段**——方案確定後，發送「**開始**」進入生成階段，我會生成完整原始碼\n\n請先點擊左下角「**設定**」填寫 API 位址與模型。",
       "builder.done": "生成完畢，可點擊「下載 ZIP」取得模組套件",
       "builder.error.noApiUrl": "請先填寫 API 位址",
       "builder.error.noApiKey": "請先填寫 API Key",
@@ -449,6 +513,8 @@ export const I18n = (function () {
       "builder.downloadZip": "ZIP ダウンロード",
       "builder.sessions": "セッション",
       "builder.newSession": "新規セッション",
+      "builder.newChat": "新しいチャット",
+      "builder.themeToggle": "テーマ切替",
       "builder.noSessions": "セッションなし",
       "builder.exportSessions": "セッションをエクスポート",
       "builder.exportCurrent": "現在のセッションをエクスポート",
@@ -462,6 +528,14 @@ export const I18n = (function () {
       "builder.error.importEmpty": "インポート可能なセッションが見つかりません",
       "builder.deleteSessionConfirm":
         "このセッションを削除しますか？会話と生成ファイルは消去されます。",
+      "builder.session.today": "今日",
+      "builder.session.yesterday": "昨日",
+      "builder.session.withinWeek": "7 日以内",
+      "builder.session.earlier": "より前",
+      "builder.renameSession": "セッション名を変更",
+      "builder.clearAllSessions": "全セッションを削除",
+      "builder.clearAllConfirm":
+        "すべてのセッションを削除しますか？会話と生成ファイルも削除され、元に戻せません。",
       "builder.title": "AI モジュールビルダー",
       "builder.subtitle":
         "要件を伝えると、AI がドキュメントを参照して完全な ErisPulse モジュールコードを生成・パッケージ化します",
@@ -472,6 +546,8 @@ export const I18n = (function () {
       "builder.inputPlaceholderGenerate": "補足説明…",
       "builder.send": "送信",
       "builder.sending": "生成中…",
+      "builder.stop": "停止",
+      "builder.stopped": "生成を停止しました。",
       "builder.writing": "書き込み中…",
       "builder.question.custom": "自由入力…",
       "builder.question.ok": "OK",
@@ -480,6 +556,18 @@ export const I18n = (function () {
       "builder.confirmOk": "OK",
       "builder.tool.ask_question": "質問",
       "builder.tool.confirm_start": "開始確認",
+      "builder.tool.web_fetch": "Web取得",
+      "builder.webFetch.confirm":
+        "AI が外部 URL へのリクエスト（web_fetch）を試みています。許可しますか？",
+      "builder.webFetch.remember": "選択を記憶して今後確認しない",
+      "builder.webFetch.disabled":
+        "Webリクエストは設定で無効になっています。",
+      "builder.webFetch.denied":
+        "ユーザーがこのリクエストを拒否しました。search_docs を使うか、ユーザーに内容の提供を依頼してください。",
+      "builder.webFetch.cors":
+        "ブラウザの CORS ポリシーによりブロックされた可能性があります",
+      "builder.webFetch.fallback":
+        "別の情報源（search_docs など）を使うか、ユーザーに内容の貼り付けを依頼してください。",
       "builder.confirmStartMsg": "資料が整いました。生成を開始しますか？",
       "builder.startCommand": "開始",
       "builder.docsInitHint":
@@ -499,7 +587,7 @@ export const I18n = (function () {
         "生成フェーズに切り替わりました。AI がファイルを書き込めるようになりました",
       "builder.phaseSwitchedToPlan": "プランニングフェーズに切り替わりました。AI は文書の参照のみ可能です",
       "builder.welcome":
-        "### AI モジュールビルダー\n\n**小eris**です。ErisPulse 公式の AI モジュール構築アシスタントです。\n\n2 ステップでモジュールを構築します：\n\n1. **プランニング**——作りたいものを教えてください。公式ドキュメントを参照し、プランをご提案します\n2. **生成**——プランが決まったら「**開始**」と送信してください。生成フェーズに切り替わり、完全なソースコードを生成します\n\n右上の「**モデルを設定**」で API アドレスとモデルを設定してください。",
+        "### AI モジュールビルダー\n\n**小eris**です。ErisPulse 公式の AI モジュール構築アシスタントです。\n\n2 ステップでモジュールを構築します：\n\n1. **プランニング**——作りたいものを教えてください。公式ドキュメントを参照し、プランをご提案します\n2. **生成**——プランが決まったら「**開始**」と送信してください。生成フェーズに切り替わり、完全なソースコードを生成します\n\n左下の「**設定**」アイコンから API アドレスとモデルを設定してください。",
       "builder.done": "生成完了。「ZIP をダウンロード」でモジュールパッケージを取得できます",
       "builder.error.noApiUrl": "API アドレスを入力してください",
       "builder.error.noApiKey": "API Key を入力してください",
@@ -580,6 +668,8 @@ export const I18n = (function () {
       "builder.downloadZip": "Скачать ZIP",
       "builder.sessions": "Сессии",
       "builder.newSession": "Новая",
+      "builder.newChat": "Новый чат",
+      "builder.themeToggle": "Сменить тему",
       "builder.noSessions": "Нет сессий",
       "builder.exportSessions": "Экспорт сессий",
       "builder.exportCurrent": "Экспорт текущей сессии",
@@ -593,6 +683,14 @@ export const I18n = (function () {
       "builder.error.importEmpty": "В файле нет сессий для импорта",
       "builder.deleteSessionConfirm":
         "Удалить эту сессию? Диалог и сгенерированные файлы будут удалены.",
+      "builder.session.today": "Сегодня",
+      "builder.session.yesterday": "Вчера",
+      "builder.session.withinWeek": "За 7 дней",
+      "builder.session.earlier": "Ранее",
+      "builder.renameSession": "Переименовать сессию",
+      "builder.clearAllSessions": "Очистить все сессии",
+      "builder.clearAllConfirm":
+        "Очистить все сессии? Все диалоги и созданные файлы будут удалены безвозвратно.",
       "builder.title": "Конструктор модулей",
       "builder.subtitle":
         "Опишите задачу; AI изучит документацию и сгенерирует полный модуль ErisPulse для скачивания",
@@ -603,6 +701,8 @@ export const I18n = (function () {
       "builder.inputPlaceholderGenerate": "Дополните…",
       "builder.send": "Отправить",
       "builder.sending": "Генерация…",
+      "builder.stop": "Стоп",
+      "builder.stopped": "Генерация остановлена.",
       "builder.writing": "Запись…",
       "builder.question.custom": "Свой ответ…",
       "builder.question.ok": "OK",
@@ -611,6 +711,18 @@ export const I18n = (function () {
       "builder.confirmOk": "OK",
       "builder.tool.ask_question": "Вопрос",
       "builder.tool.confirm_start": "Подтвердить старт",
+      "builder.tool.web_fetch": "Веб-запрос",
+      "builder.webFetch.confirm":
+        "ИИ запрашивает доступ к внешнему URL (web_fetch). Разрешить этот запрос?",
+      "builder.webFetch.remember": "Запомнить и больше не спрашивать",
+      "builder.webFetch.disabled":
+        "Веб-запросы отключены в настройках.",
+      "builder.webFetch.denied":
+        "Пользователь отклонил этот веб-запрос. Используйте search_docs или попросите пользователя предоставить содержимое.",
+      "builder.webFetch.cors":
+        "возможно, заблокировано политикой CORS браузера",
+      "builder.webFetch.fallback":
+        "Используйте другой источник (например search_docs) или попросите пользователя вставить содержимое.",
       "builder.confirmStartMsg": "Материалы готовы. Начать генерацию?",
       "builder.startCommand": "начать",
       "builder.docsInitHint":
@@ -630,7 +742,7 @@ export const I18n = (function () {
         "Переключено в режим генерации. AI теперь может записывать файлы.",
       "builder.phaseSwitchedToPlan": "Переключено в режим планирования. AI может только читать документацию.",
       "builder.welcome":
-        "### Конструктор модулей\n\nЯ **Сяо-эрис**, официальный помощник ErisPulse по созданию модулей.\n\nЯ помогу собрать модуль в два шага:\n\n1. **Планирование**——расскажите, что хотите создать; я изучу документацию и предложу план\n2. **Генерация**——когда план готов, отправьте «**начать**», и я сгенерирую полный исходный код\n\nНажмите «**Настроить модель**» в правом верхнем углу, чтобы указать API-адрес и модель.",
+        "### Конструктор модулей\n\nЯ **Сяо-эрис**, официальный помощник ErisPulse по созданию модулей.\n\nЯ помогу собрать модуль в два шага:\n\n1. **Планирование**——расскажите, что хотите создать; я изучу документацию и предложу план\n2. **Генерация**——когда план готов, отправьте «**начать**», и я сгенерирую полный исходный код\n\nНажмите на значок «**Настройки**» в левом нижнем углу, чтобы указать API-адрес и модель.",
       "builder.done": "Готово. Нажмите «Скачать ZIP», чтобы получить пакет модуля",
       "builder.error.noApiUrl": "Укажите API-адрес",
       "builder.error.noApiKey": "Укажите API Key",
