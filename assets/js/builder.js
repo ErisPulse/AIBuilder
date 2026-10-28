@@ -2342,11 +2342,11 @@ function setSending(v) {
   if (!stopEl) {
     stopEl = document.createElement("span");
     stopEl.className = "builder-send-stop";
-    stopEl.innerHTML =
-      icon("stop") + escapeHtml(I18n.t("builder.stop"));
+    stopEl.innerHTML = icon("stop");
     btn.appendChild(stopEl);
   }
   btn.classList.toggle("sending", v);
+  btn.title = v ? I18n.t("builder.stop") : "";
    
   btn.disabled = false;
 }

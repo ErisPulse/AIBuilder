@@ -1376,6 +1376,15 @@
 .builder-send .builder-send-mode-tag {
   display: none;
 }
+.builder-send .builder-send-stop {
+  display: none;
+}
+.builder-send.sending .builder-send-stop {
+  display: inline-flex;
+}
+.builder-send.sending > svg:first-of-type {
+  display: none;
+}
 .builder-send.sending {
   background: var(--qvq-er-c);
 }
