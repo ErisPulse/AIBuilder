@@ -286,7 +286,6 @@ ErisPulse 是基于 Python 的高性能异步机器人开发框架。当前任�
 - search_docs(query, top_k)：关键词检索官方文档（${langName()} 版本，由 MCP 实时检索）。一次可覆盖多个关键词，例如一次搜索"命令注册 事件监听 配置 存储"。
 - read_document(doc_path)：读取某篇文档完整内容。
 - list_documents()：列出所有文档标题与路径。
-- list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现（用于深入了解 API 细节）。
 - ask_question(questions)：向用户提问。questions 是数组，每项含 question（问题）、options（选项）和可选的 multi（true 时为多选）。注意 options 必须是纯字符串数组（如 ["选项A","选项B"]），不要传对象。可一次问多个相关问题。系统会自动为每个问题追加「自定义答案」。澄清需求时优先用它，不要把多个问题堆在一段文字里。
 - web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。查询外部资料、调用开放 API 时使用；ErisPulse 文档仍优先用 search_docs。
 
@@ -323,7 +322,6 @@ function buildGenerateSystemPrompt() {
 - search_docs(query, top_k)：关键词检索官方文档（由 MCP 实时检索），返回最相关的片段。优先用它定位内容。
 - read_document(doc_path)：读取某篇文档的完整内容。当你已从检索结果或索引中确定要看哪篇文档时使用。
 - list_documents()：列出所有可用文档的标题与路径。
-- list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现。
 - web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。ErisPulse 文档仍优先用 search_docs。
 - write_file(path, content)：写入一个生成的文件（覆盖已存在）。适合创建新文件或大幅重写。
 - patch_file(path, old_text, new_text, replace_all)：在已有文件中模糊替换片段。适合小幅修改（改名、加一行、调整参数）。采用模糊匹配（忽略多余空白差异），old_text 须能唯一定位。
@@ -427,36 +425,6 @@ const READ_TOOL_SCHEMAS = [
       name: "list_documents",
       description: "列出所有可用的官方文档",
       parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_languages",
-      description: "列出文档支持的所有语言",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_source_files",
-      description: "列出 ErisPulse SDK 的所有 Python 源码文件路径",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read_source_file",
-      description: "读取某个 SDK 源码文件的完整内容（用于了解实现细节）",
-      parameters: {
-        type: "object",
-        properties: {
-          file_path: { type: "string", description: "源码文件路径（来自 list_source_files）" },
-        },
-        required: ["file_path"],
-      },
     },
   },
   {
@@ -958,17 +926,6 @@ async function executeTool(name, args, ctx) {
     }
     case "list_documents": {
       return await MCP.callTool("list_documents", { lang: I18n.getLang() });
-    }
-    case "list_languages": {
-      return await MCP.callTool("list_languages", {});
-    }
-    case "list_source_files": {
-      return await MCP.callTool("list_source_files", {});
-    }
-    case "read_source_file": {
-      return await MCP.callTool("read_source_file", {
-        file_path: args.file_path || "",
-      });
     }
     case "write_file": {
       const path = String(args.path || "").trim();
@@ -2025,9 +1982,6 @@ function iconForTool(tool) {
     read_file: "fileLines",
     delete_file: "trash",
     list_documents: "list",
-    list_languages: "language",
-    list_source_files: "folderTree",
-    read_source_file: "fileCode",
     get_manifest: "folderOpen",
     finalize: "check",
     ask_question: "help",

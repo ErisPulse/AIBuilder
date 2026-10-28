@@ -129,9 +129,9 @@ async function ensureInitialized(url) {
       capabilities: {},
       clientInfo: { name: "ErisPulse-AIBuilder", version: "1.0.0" },
     });
-    try {
-      await rpc(url, "notifications/initialized", {}, { notification: true });
-    } catch (e) { /* ok */ }
+    // 不发送 notifications/initialized：该通知在 mcp.erisdev.com 上返回 202
+    // 且不带 CORS 响应头，浏览器会拦截并打印 CORS 错误。实测服务器不依赖该
+    // 通知（跳过它后 tools/call 仍正常），故直接省略以避免控制台报错。
     conn.initialized = true;
   })();
   return conn.initPromise;
