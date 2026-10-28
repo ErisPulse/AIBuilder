@@ -2337,16 +2337,16 @@ function setSending(v) {
   sending = v;
   const btn = $("builder-send");
   if (!btn) return;
-  // 生成中按钮变「停止」；停止元素只注入一次
+  // 生成中按钮变「停止」图标；停止元素只注入一次
   let stopEl = btn.querySelector(".builder-send-stop");
   if (!stopEl) {
     stopEl = document.createElement("span");
     stopEl.className = "builder-send-stop";
-    stopEl.innerHTML =
-      icon("stop") + escapeHtml(I18n.t("builder.stop"));
+    stopEl.innerHTML = icon("stop");
     btn.appendChild(stopEl);
   }
   btn.classList.toggle("sending", v);
+  btn.title = v ? I18n.t("builder.stop") : "";
   // 生成中按钮保持可点击（充当停止键）
   btn.disabled = false;
 }
