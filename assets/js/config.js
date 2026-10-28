@@ -33,12 +33,27 @@ export const CONFIG = {
   STORAGE_KEYS: {
     SETTINGS: "erispulse-builder-settings",
     THEME: "erispulse-builder-theme",
+    OLED: "erispulse-builder-oled",
+  },
+
+   
+  SANDBOX: {
+     
+    pyodideVersion: "v0.28.3",
+    cdnCandidates: [
+      "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/",
+      "https://fastly.jsdelivr.net/pyodide/v0.28.3/full/",
+      "https://gcore.jsdelivr.net/pyodide/v0.28.3/full/",
+    ],
+    bootTimeoutMs: 600000,  
+    opTimeoutMs: 90000,  
+    maxLogLines: 600,
   },
 
    
   DEFAULT_USER_SETTINGS: {
     version: "1.0",
-    theme: "dark",
+    theme: "auto",
      
     builder: {
       api_url: "",
@@ -46,6 +61,7 @@ export const CONFIG = {
       model: "",
       persistKey: true,
       sendMode: "enter",
+      onboarded: false,  
        
       webTool: true,
       webToolConsent: false,

@@ -4,7 +4,7 @@
 
 # ErisPulse Builder
 
-**AI 模块构建器 —— 用自然语言生成 ErisPulse 模块**
+**用自然语言生成 ErisPulse 模块，在浏览器里直接试运行**
 
 <p>
   <a href="https://github.com/ErisPulse/AIBuilder"><img src="https://img.shields.io/github/stars/ErisPulse/AIBuilder?style=for-the-badge&logo=github&color=brightgreen" alt="Stars"></a>
@@ -18,32 +18,41 @@
 
 ## 简介
 
-ErisPulse **AI 模块构建器**：用自然语言描述需求，AI 会查阅 ErisPulse 官方文档（内置 BM25 文档检索），分两阶段（规划 → 生成）产出完整的 ErisPulse 模块源码，并打包为 ZIP 下载。
+用自然语言描述需求，AI 查阅 ErisPulse 官方文档后生成完整的模块/适配器源码，打包为 ZIP 下载。生成过程中可以在浏览器里直接试运行：页面通过 WebAssembly 跑起一个真实的 ErisPulse 实例，AI 会自己运行刚写的代码、根据报错修改，直到跑通。
 
-本仓库是从 [官网](https://www.erisdev.com) 抽离出的**独立应用**，部署在 `builder.erisdev.com`。官网侧已移除 builder，并自动跳转到本站。
+本仓库是从[官网](https://www.erisdev.com)抽离出的独立应用，部署在 `builder.erisdev.com`。
 
 ### 工作流程
 
-1. **规划阶段**：AI 仅持有查阅工具（`search_docs` / `read_document`），与你讨论需求、检索文档、形成方案，不写任何文件。
-2. **生成阶段**：你说「开始生成」后，AI 切换到生成系统提示词，获得写入工具（`write_file` / `get_manifest` / `finalize`），据此产出完整模块代码。
+1. **规划**：AI 只查文档、和你确认需求与方案，不写文件。
+2. **生成**：发送「开始生成」后，AI 写出全部源码，然后调用 `run_module` 把代码部署进浏览器内的实例运行，有报错就改，直到通过。
+3. **试运行**：打开「实例控制台」可以注入模拟聊天消息，查看运行日志和模块发出的消息。
 
 ### 特性
 
-- 🔍 **文档检索（RAG via MCP）**：通过 ErisPulse 官方 MCP Server（mcp.erisdev.com）实时检索文档与源码，无需本地索引
-- 🤖 **自带 API**：填入你自己的 OpenAI 兼容 API（`api_url` + `api_key` + `model`），密钥仅存本地
-- 💬 **会话管理**：多会话、导入 / 导出（JSON）
-- 📦 **文件生成**：AI 生成多文件模块，一键下载 ZIP
-- 🌐 **多语言**：随 ErisPulse 文档支持 zh-CN / en / zh-TW / ja / ru
+- 文档检索走官方 MCP Server（mcp.erisdev.com），不在本地建索引
+- 自带 OpenAI 兼容 API 配置，密钥只存浏览器本地
+- 多会话管理，支持导入/导出 JSON；生成的文件带撤销/重做
+- 界面有亮/暗/OLED 三套主题，适配移动端
+- 界面文案支持 zh-CN / en / zh-TW / ja / ru
+
+### 浏览器实例的限制
+
+WebAssembly 是单线程环境，以下能力在实例里跑不了：
+
+- SQL / ORM / 事务（aiosqlite 依赖原生线程）；`storage` 的 KV 读写是内存实现，可用
+- 原生线程、文件监视热重载
+- 监听端口，所以 Dashboard 跑不起来，实例控制台代替它的位置
+
+其余能力（模块生命周期、命令、事件处理、`event.reply`、config 读写）都是真实的框架行为。AI 写代码时知道这些边界，会主动规避。
 
 ## 本地预览
 
-无需构建步骤，任意静态服务器即可（因为使用 ES Modules，必须用 HTTP 服务器，不能直接 `file://` 打开）：
+纯静态页面，任意 HTTP 服务器即可（ES Modules 不能用 `file://` 直接打开）：
 
 ```bash
-# Python
 python -m http.server 8000
-
-# 或 Node
+# 或
 npx serve -p 8000
 ```
 
@@ -51,54 +60,49 @@ npx serve -p 8000
 
 ## 使用
 
-1. 打开站点，点击右上角「配置模型」填写你的 OpenAI 兼容 API：
-   - API URL（如 `https://api.openai.com/v1`）
-   - API Key
-   - 模型名（如 `gpt-4o`）
-2. 在输入框描述你想要的模块（如「做一个每天定时发送一句鸡汤的模块」）
-3. 与 AI 在规划阶段确认方案后，发送「开始生成」
-4. 生成完成后点击「下载 ZIP」
+1. 第一次打开会弹出配置向导，填 API 地址、Key 和模型名，可以点「测试连接」验证；之后在左下角「配置」里也能改
+2. 描述需求，在规划阶段和 AI 确认方案
+3. 发送「开始生成」，AI 写代码并自动试运行
+4. 完成后下载 ZIP；也可以在实例控制台里手动注入消息试试模块的反应
 
-> ⚠️ 密钥默认保存在本地（localStorage），可在设置里关闭「记住密钥」。
+首次启动实例需要下载运行时和依赖（约 20-40MB），之后走浏览器缓存。
+
+> 密钥默认保存在本地（localStorage），可在设置里关闭「记住密钥」。
 
 ## 文档来源
 
-构建器的知识库通过 **ErisPulse MCP Server**（`mcp.erisdev.com`）实时检索，不在客户端本地缓存/索引文档。MCP 提供：
+构建器的知识库通过 ErisPulse MCP Server（`mcp.erisdev.com`）实时检索：
 
 - `search_docs(query, top_k?, lang?)` — BM25 关键词检索
 - `read_document(doc_path, lang?)` — 读取单篇文档
 - `list_documents(lang?)` — 列出所有文档
 - `list_languages()` — 列出支持的语言
-- `list_source_files()` — 列出所有源码文件
-- `read_source_file(file_path)` — 读取源码文件内容
+- `list_source_files()` / `read_source_file(file_path)` — 查阅 SDK 源码
 
-> 同 IP 限速 50 次/分钟，客户端内置速率控制。
-
-配置见 [`assets/js/mcp.js`](assets/js/mcp.js) 与 [`assets/js/config.js`](assets/js/config.js)。
+同 IP 限速 50 次/分钟，客户端内置速率控制。配置见 [`assets/js/mcp.js`](assets/js/mcp.js) 与 [`assets/js/config.js`](assets/js/config.js)。
 
 ## 技术栈
 
-- 原生 JavaScript (ES6 Modules)
-- [Marked.js](https://marked.js.org/) · Markdown 渲染
-- [Prism.js](https://prismjs.com/) · 代码高亮
-- [JSZip](https://stuk.github.io/jszip/) · ZIP 打包（运行时动态加载）
-- [Font Awesome](https://fontawesome.com/) · 图标
+原生 JavaScript (ES6 Modules)，无构建步骤。[Pyodide](https://pyodide.org/)（浏览器内 Python）、[Marked.js](https://marked.js.org/)、[Prism.js](https://prismjs.com/)、[JSZip](https://stuk.github.io/jszip/)，图标为内联 SVG。
 
 ## 项目结构
 
 ```
 AIBuilder/
-├── index.html              # 应用入口（全屏 builder）
+├── index.html              # 页面入口
 ├── CNAME                   # builder.erisdev.com
 ├── assets/
 │   ├── css/
-│   │   ├── base.css        # 基础样式 / 主题变量
-│   │   └── builder.css     # builder 专属样式
+│   │   ├── base.css        # 主题变量（亮/暗/OLED）
+│   │   └── builder.css     # 组件样式与移动端适配
 │   └── js/
 │       ├── app.js          # 入口初始化
-│       ├── builder.js      # 核心逻辑（RAG via MCP、两阶段对话、工具、ZIP）
-│       ├── mcp.js          # MCP 客户端（mcp.erisdev.com 文档检索 + 限速）
-│       ├── config.js       # MCP 端点 / 默认设置
+│       ├── builder.js      # 对话、工具调用、会话、ZIP 等核心逻辑
+│       ├── sandbox.js      # 实例管理器（状态机、超时保护）
+│       ├── sandbox-worker.js # Pyodide Worker（框架引导、MockAdapter、热重载）
+│       ├── icons.js        # 内联 SVG 图标
+│       ├── mcp.js          # MCP 客户端
+│       ├── config.js       # 站点配置与默认设置
 │       ├── i18n.js         # 多语言文案
 │       ├── state.js        # 设置持久化
 │       └── notify.js       # 提示工具
