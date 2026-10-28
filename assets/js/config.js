@@ -33,12 +33,27 @@ export const CONFIG = {
   STORAGE_KEYS: {
     SETTINGS: "erispulse-builder-settings",
     THEME: "erispulse-builder-theme",
+    OLED: "erispulse-builder-oled",
+  },
+
+  // 浏览器内 ErisPulse 实例（Pyodide 沙箱）
+  SANDBOX: {
+    // Pyodide 固定版本；依次尝试多个 CDN（主站不可达时回退）
+    pyodideVersion: "v0.28.3",
+    cdnCandidates: [
+      "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/",
+      "https://fastly.jsdelivr.net/pyodide/v0.28.3/full/",
+      "https://gcore.jsdelivr.net/pyodide/v0.28.3/full/",
+    ],
+    bootTimeoutMs: 600000, // 首次启动（下载运行时 + micropip 安装，慢网络可能数分钟）
+    opTimeoutMs: 90000, // 单次操作（运行/执行/注入）
+    maxLogLines: 600,
   },
 
   // 默认用户设置（仅保留 builder 相关 + 主题）
   DEFAULT_USER_SETTINGS: {
     version: "1.0",
-    theme: "dark",
+    theme: "auto",
     // AI 模块构建器配置
     builder: {
       api_url: "",
@@ -46,6 +61,7 @@ export const CONFIG = {
       model: "",
       persistKey: true,
       sendMode: "enter",
+      onboarded: false, // 新手引导是否已完成/跳过
       // 联网请求（web_fetch）：开关 + 用户授权记忆
       webTool: true,
       webToolConsent: false,

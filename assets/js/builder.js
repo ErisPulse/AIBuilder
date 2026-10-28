@@ -20,6 +20,8 @@ import { I18n } from "./i18n.js";
 import { state, saveUserSettings } from "./state.js";
 import { showMessage, escapeHtml } from "./notify.js";
 import { MCP } from "./mcp.js";
+import { ICONS, icon, BOT_FACE_SVG } from "./icons.js";
+import { Sandbox } from "./sandbox.js";
 
 /* ============================================================
  * 1. 配置访问辅助
@@ -329,6 +331,17 @@ function buildGenerateSystemPrompt() {
 - delete_file(path)：删除一个已生成文件。
 - get_manifest()：查看当前已生成的文件清单。
 - finalize()：标记生成完成。
+
+【实例试运行（浏览器内真实 ErisPulse 实例）】
+- run_module(events?)：把已生成文件部署到实例并运行（自动重载旧代码），events 为可选的 OneBot12 事件数组（字符串 = 私聊文本）。返回运行日志、错误与实例发出的消息。
+- exec_python(code)：在实例内执行任意 Python（顶层 await 可用），返回输出与结果 repr。用于调试与检查状态。
+- install_packages(packages)：为实例追加安装纯 Python 依赖（micropip）。
+
+实例运行规则：
+1. 所有文件写完后，必须调用 run_module 运行一次；若报错（ImportError/语法错误/处理器异常等），用 patch_file 修复后再次运行，直到通过。
+2. 运行通过后再 finalize。修复迭代最多 3 轮，仍有错误时如实告知用户剩余问题。
+3. 实例中平台名为 "ep_mock"（MockAdapter），不联网；模块发出的消息会被捕获并回传给你。
+4. pyproject.toml 声明的依赖若非 ErisPulse 自带，先用 install_packages 安装再运行。
 
 【严格要求 - 必须遵守】
 1. 收到用户需求后，第一轮必须立即调用 search_docs 检索相关 SDK API。一次 search_docs 可以覆盖多个关键词，例如一次搜索"命令注册 事件监听 配置 存储"，不要为每个关键词单独调用
@@ -641,6 +654,63 @@ const CONFIRM_START_SCHEMA = {
   },
 };
 
+// 实例操作工具（生成阶段可用）：在浏览器内的真实 ErisPulse 实例中运行/调试
+const INSTANCE_TOOL_SCHEMAS = [
+  {
+    type: "function",
+    function: {
+      name: "run_module",
+      description:
+        "把当前已生成的全部文件部署到浏览器内的真实 ErisPulse 实例并运行（自动重载旧代码）。可选注入 OneBot12 测试事件驱动模块。返回运行日志、错误与实例发出的消息。生成文件后强烈建议运行一次验证；发现报错应修复文件后再次运行。",
+      parameters: {
+        type: "object",
+        properties: {
+          events: {
+            type: "array",
+            description:
+              "可选，注入的 OneBot12 事件数组。每项可用简写形式（字符串 = 私聊文本），或完整事件对象（如 {\"platform\":\"ep_mock\",\"type\":\"message\",\"detail_type\":\"private\",\"message\":[{\"type\":\"text\",\"data\":{\"text\":\"你好\"}}]}）。省缺时自动注入一条私聊消息「你好」。",
+            items: {},
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "exec_python",
+      description:
+        "在已启动的 ErisPulse 实例内执行任意 Python 代码（支持顶层 await，可直接 import 生成的模块或 from ErisPulse import sdk）。返回 stdout 输出与最后表达式的 repr。用于调试、检查运行时状态。",
+      parameters: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "要执行的 Python 代码" },
+        },
+        required: ["code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "install_packages",
+      description:
+        "为实例安装额外的纯 Python 依赖（通过 micropip，从 PyPI 安装）。仅支持纯 Python 包或 Pyodide 内置包（如 matplotlib、Pillow、httpx）；含 C 扩展且非内置的包无法安装。",
+      parameters: {
+        type: "object",
+        properties: {
+          packages: {
+            type: "array",
+            items: { type: "string" },
+            description: "包名列表，如 [\"matplotlib\"]",
+          },
+        },
+        required: ["packages"],
+      },
+    },
+  },
+];
+
 function isMcpEnabled() {
   const servers = settings().mcpServers || [];
   return servers.some((s) => s.enabled !== false);
@@ -651,7 +721,7 @@ function getPlanTools() {
   return tools;
 }
 function getGenerateTools() {
-  const tools = WRITE_TOOL_SCHEMAS;
+  const tools = WRITE_TOOL_SCHEMAS.concat(INSTANCE_TOOL_SCHEMAS);
   if (isMcpEnabled()) return READ_TOOL_SCHEMAS.concat(tools);
   return tools;
 }
@@ -660,7 +730,10 @@ const PLAN_TOOLS = READ_TOOL_SCHEMAS.concat([
   ASK_QUESTION_SCHEMA,
   CONFIRM_START_SCHEMA,
 ]);
-const GENERATE_TOOLS = READ_TOOL_SCHEMAS.concat(WRITE_TOOL_SCHEMAS);
+const GENERATE_TOOLS = READ_TOOL_SCHEMAS.concat(
+  WRITE_TOOL_SCHEMAS,
+  INSTANCE_TOOL_SCHEMAS,
+);
 
 /* ============================================================
  * 7. 已生成文件状态 + 阶段状态
@@ -959,6 +1032,46 @@ async function executeTool(name, args, ctx) {
       finalized = true;
       return "已标记完成。";
     }
+    case "run_module": {
+      if (Object.keys(generatedFiles).length === 0) {
+        return I18n.t("builder.instance.needFiles");
+      }
+      try {
+        const report = await Sandbox.runTest({ ...generatedFiles }, args.events);
+        return formatInstanceReport(report);
+      } catch (e) {
+        return (
+          I18n.t("builder.instance.bootFail") + ": " + (e.message || e)
+        );
+      }
+    }
+    case "exec_python": {
+      try {
+        const r = await Sandbox.exec(String(args.code || ""));
+        const out = (r.logs || []).map((l) => l.text).join("\n").trim();
+        let res =
+          "=== stdout ===\n" +
+          (out || I18n.t("builder.instance.report.none")) +
+          "\n=== result ===\n" +
+          (r.result || "(no return value)");
+        if (res.length > 4000) res = res.slice(0, 4000) + "\n…（过长已截断）";
+        return res;
+      } catch (e) {
+        return "执行出错: " + (e.message || e);
+      }
+    }
+    case "install_packages": {
+      const pkgs = Array.isArray(args.packages)
+        ? args.packages.map(String).filter(Boolean)
+        : [];
+      if (pkgs.length === 0) return "错误：缺少 packages";
+      try {
+        await Sandbox.install(pkgs);
+        return "已安装: " + pkgs.join(", ");
+      } catch (e) {
+        return "安装失败: " + (e.message || e);
+      }
+    }
     case "ask_question": {
       const qs = Array.isArray(args.questions) ? args.questions : [];
       if (qs.length === 0) return "（未提供问题）";
@@ -1200,24 +1313,86 @@ function renderMarkdown(text) {
   return escapeHtml(text || "");
 }
 
-// 统一风格的线性 SVG 图标（Lucide 风格，currentColor 描边）
-const ICON_PAPERCLIP =
-  '<svg class="builder-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
-// 多选：未选中（空方框）
-const ICON_SQUARE =
-  '<svg class="builder-svg-icon builder-svg-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>';
-// 多选：选中（带勾的方框）
-const ICON_CHECK_SQUARE =
-  '<svg class="builder-svg-icon builder-svg-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m9 12 2 2 4-4"/></svg>';
-// 关闭（X）
-const ICON_X =
-  '<svg class="builder-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-// 展开箭头（右）
-const ICON_CHEVRON_RIGHT =
-  '<svg class="builder-svg-icon builder-svg-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
-// 展开箭头（下）
-const ICON_CHEVRON_DOWN =
-  '<svg class="builder-svg-icon builder-svg-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+// 统一从 icons.js 取内联 SVG（QvQChat 风格线性描边图标）
+const ICON_PAPERCLIP = icon("paperclip");
+const ICON_SQUARE = icon("square", "builder-svg-icon builder-svg-check");
+const ICON_CHECK_SQUARE = icon(
+  "checkSquare",
+  "builder-svg-icon builder-svg-check",
+);
+const ICON_X = icon("x");
+const ICON_CHEVRON_RIGHT = icon(
+  "chevronRight",
+  "builder-svg-icon builder-svg-chevron",
+);
+const ICON_CHEVRON_DOWN = icon(
+  "chevronDown",
+  "builder-svg-icon builder-svg-chevron",
+);
+
+/**
+ * 将消息内容容器中的 <pre><code class="language-x"> 增强为
+ * QvQChat 风格的代码块（语言标签栏 + 复制按钮），并应用 Prism 高亮。
+ */
+function enhanceMarkdownContainer(container) {
+  if (!container) return;
+  const blocks = container.querySelectorAll("pre > code");
+  blocks.forEach((code) => {
+    const pre = code.parentElement;
+    if (pre.parentElement && pre.parentElement.classList.contains("builder-md-pre")) return;
+    const lang =
+      (code.className.match(/language-([\w-]+)/) || [])[1] || "text";
+    const wrap = document.createElement("div");
+    wrap.className = "builder-md-pre";
+    const bar = document.createElement("div");
+    bar.className = "builder-md-lang";
+    const langLabel = document.createElement("span");
+    langLabel.textContent = lang;
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "builder-md-copy";
+    copyBtn.innerHTML = icon("copy") + "<span>" + escapeHtml(I18n.t("builder.copy")) + "</span>";
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyTextToClipboard(code.textContent || "");
+      const span = copyBtn.querySelector("span");
+      if (span) {
+        const old = span.textContent;
+        span.textContent = I18n.t("builder.copied");
+        setTimeout(() => (span.textContent = old), 1200);
+      }
+    });
+    bar.appendChild(langLabel);
+    bar.appendChild(copyBtn);
+    // 原位替换：pre → wrap(pre)
+    pre.replaceWith(wrap);
+    wrap.appendChild(bar);
+    wrap.appendChild(pre);
+    // Prism 高亮
+    if (typeof Prism !== "undefined" && lang !== "text") {
+      try {
+        Prism.highlightElement(code);
+      } catch (_) {}
+    }
+  });
+}
+
+function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+    } catch (_) {}
+    ta.remove();
+  }
+}
 
 // 用户消息中“附带文件”区的起始标记，供历史重现时解析出可见文本
 const ATTACHMENT_HEADER =
@@ -1268,17 +1443,9 @@ function appendMessage(messagesEl, role, text, attachments) {
   wrap.className =
     "builder-msg " + (role === "user" ? "builder-msg-user" : "builder-msg-bot");
 
-  // 仅机器人在气泡左侧显示头像；用户消息只有气泡
-  if (role !== "user") {
-    const avatar = document.createElement("div");
-    avatar.className = "builder-msg-avatar";
-    avatar.innerHTML =
-      '<img src="' + CONFIG.ASSETS.erisAvatar + '" alt="" />';
-    wrap.appendChild(avatar);
-  }
-
   const content = document.createElement("div");
   content.className = "builder-msg-content";
+
   if (role === "user") {
     // 统一处理「可见文本 + 附带文件」：
     //   1) 实时发送时传入 attachments 数组
@@ -1302,7 +1469,7 @@ function appendMessage(messagesEl, role, text, attachments) {
       }
       // 附件列表（SVG 图标，不使用 emoji）
       const list = document.createElement("div");
-      list.className = "builder-msg-attachments";
+      list.className = "builder-msg-user-attach";
       for (const name of fileNames) {
         const item = document.createElement("div");
         item.className = "builder-msg-attachment";
@@ -1317,14 +1484,46 @@ function appendMessage(messagesEl, role, text, attachments) {
     } else {
       content.textContent = displayText;
     }
+    wrap.appendChild(content);
+    wrap.appendChild(buildMessageActs(() => displayText));
   } else {
+    // 机器人消息：头像 + 正文（Markdown，无底色）+ 复制
+    const avatar = document.createElement("div");
+    avatar.className = "builder-msg-avatar";
+    avatar.innerHTML =
+      '<img src="' + CONFIG.ASSETS.erisAvatar + '" alt="" />';
+    const body = document.createElement("div");
+    body.className = "builder-msg-body";
+    content.classList.add("builder-md");
     content.innerHTML = renderMarkdown(text);
+    enhanceMarkdownContainer(content);
+    const raw = String(text || "");
+    body.appendChild(content);
+    body.appendChild(buildMessageActs(() => raw));
+    wrap.appendChild(avatar);
+    wrap.appendChild(body);
   }
 
-  wrap.appendChild(content);
   messagesEl.appendChild(wrap);
   scrollToBottom(messagesEl);
   return content;
+}
+
+/** 消息操作行（复制按钮，悬停浮现） */
+function buildMessageActs(rawTextGetter) {
+  const acts = document.createElement("div");
+  acts.className = "builder-msg-acts";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.title = I18n.t("builder.copy");
+  btn.innerHTML = icon("copy");
+  btn.addEventListener("click", () => {
+    copyTextToClipboard(rawTextGetter());
+    btn.innerHTML = icon("check");
+    setTimeout(() => (btn.innerHTML = icon("copy")), 1200);
+  });
+  acts.appendChild(btn);
+  return acts;
 }
 
 function appendSystemMessage(messagesEl, text) {
@@ -1818,38 +2017,26 @@ function formatRequestDetail(args) {
 }
 
 function iconForTool(tool) {
-  switch (tool) {
-    case "search_docs":
-      return '<i class="fas fa-magnifying-glass"></i>';
-    case "read_document":
-      return '<i class="fas fa-book-open"></i>';
-    case "write_file":
-      return '<i class="fas fa-file-pen"></i>';
-    case "patch_file":
-      return '<i class="fas fa-wand-magic-sparkles"></i>';
-    case "read_file":
-      return '<i class="fas fa-file-lines"></i>';
-    case "delete_file":
-      return '<i class="fas fa-trash-can"></i>';
-    case "list_documents":
-      return '<i class="fas fa-list"></i>';
-    case "list_languages":
-      return '<i class="fas fa-language"></i>';
-    case "list_source_files":
-      return '<i class="fas fa-folder-tree"></i>';
-    case "read_source_file":
-      return '<i class="fas fa-file-code"></i>';
-    case "get_manifest":
-      return '<i class="fas fa-folder-open"></i>';
-    case "finalize":
-      return '<i class="fas fa-check"></i>';
-    case "ask_question":
-      return '<i class="fas fa-circle-question"></i>';
-    case "web_fetch":
-      return '<i class="fas fa-globe"></i>';
-    default:
-      return '<i class="fas fa-wrench"></i>';
-  }
+  const map = {
+    search_docs: "search",
+    read_document: "book",
+    write_file: "filePen",
+    patch_file: "magic",
+    read_file: "fileLines",
+    delete_file: "trash",
+    list_documents: "list",
+    list_languages: "language",
+    list_source_files: "folderTree",
+    read_source_file: "fileCode",
+    get_manifest: "folderOpen",
+    finalize: "check",
+    ask_question: "help",
+    web_fetch: "globe",
+    run_module: "play",
+    exec_python: "terminal",
+    install_packages: "box",
+  };
+  return icon(map[tool] || "wrench");
 }
 
 function kindForTool(tool) {
@@ -1866,6 +2053,59 @@ function kindForTool(tool) {
 
 function toolLabel(tool) {
   return I18n.t("builder.tool." + tool) || tool;
+}
+
+/** 把沙箱运行报告格式化为回传给 AI 的文本（超长截断） */
+function formatInstanceReport(report) {
+  const lines = [];
+  lines.push(
+    (report.ok ? "[OK] " : "[FAIL] ") +
+      I18n.t(
+        report.ok
+          ? "builder.instance.report.ok"
+          : "builder.instance.report.fail",
+      ) +
+      " · " +
+      ((report.durationMs || 0) / 1000).toFixed(1) +
+      "s" +
+      (report.pkg ? " · " + report.pkg : ""),
+  );
+  const errors = (report.errors || []).map((e) => e.text).join("\n").trim();
+  lines.push("\n=== " + I18n.t("builder.instance.report.errors") + " ===");
+  lines.push(errors || I18n.t("builder.instance.report.none"));
+  lines.push("\n=== " + I18n.t("builder.instance.report.sent") + " ===");
+  if (report.sent && report.sent.length > 0) {
+    for (const s of report.sent.slice(-20)) {
+      lines.push(formatSentItem(s));
+    }
+  } else {
+    lines.push(I18n.t("builder.instance.report.none"));
+  }
+  lines.push("\n=== " + I18n.t("builder.instance.report.logs") + " ===");
+  const logs = (report.logs || []).map((l) => l.text).join("\n").trim();
+  lines.push(logs || I18n.t("builder.instance.report.none"));
+  let out = lines.join("\n");
+  if (out.length > 4000) out = out.slice(0, 4000) + "\n…（过长已截断）";
+  return out;
+}
+
+/** 把 MockAdapter 捕获的发送记录格式化为一行摘要 */
+function formatSentItem(s) {
+  try {
+    const segs = Array.isArray(s.message) ? s.message : [];
+    const parts = [];
+    for (const seg of segs) {
+      if (seg && seg.type === "text" && seg.data) parts.push(seg.data.text || "");
+      else parts.push("[" + ((seg && seg.type) || "seg") + "]");
+    }
+    return "→ " + parts.join("");
+  } catch (e) {
+    try {
+      return "→ " + JSON.stringify(s).slice(0, 200);
+    } catch (_) {
+      return "→ (unserializable)";
+    }
+  }
 }
 
 /**
@@ -1891,6 +2131,18 @@ function formatToolDetail(tool, args) {
         : 0;
       return n ? n + " 个问题" : "";
     }
+    if (tool === "run_module") {
+      const n = Array.isArray(args && args.events) ? args.events.length : 0;
+      return n ? n + " events" : "auto event";
+    }
+    if (tool === "exec_python") {
+      return args && args.code ? String(args.code).slice(0, 60) : "";
+    }
+    if (tool === "install_packages") {
+      return Array.isArray(args && args.packages)
+        ? args.packages.join(", ")
+        : "";
+    }
   } catch (_) {}
   return "";
 }
@@ -1906,6 +2158,7 @@ function updateFileList() {
   const countEl = $("builder-files-count");
   const dlBtn = $("builder-download");
   const viewAllBtn = $("builder-view-all");
+  const sbBtn = $("builder-sandbox-btn");
   if (!list) return;
   const names = Object.keys(generatedFiles);
   list.innerHTML = "";
@@ -1916,6 +2169,7 @@ function updateFileList() {
     p.textContent = I18n.t("builder.noFiles");
     list.appendChild(p);
     if (dlBtn) dlBtn.disabled = true;
+    if (sbBtn) sbBtn.disabled = true;
     if (viewAllBtn) viewAllBtn.style.display = "none";
     return;
   }
@@ -1926,7 +2180,8 @@ function updateFileList() {
     item.className = "builder-file-item";
     const size = formatSize((generatedFiles[n] || "").length);
     item.innerHTML =
-      '<i class="fas fa-file-code"></i><span>' +
+      icon("fileCode") +
+      "<span>" +
       escapeHtml(n) +
       '</span><span class="builder-file-size">' +
       size +
@@ -1934,6 +2189,7 @@ function updateFileList() {
     list.appendChild(item);
   }
   if (dlBtn) dlBtn.disabled = false;
+  if (sbBtn) sbBtn.disabled = false;
   if (viewAllBtn) {
     if (names.length > 3) {
       viewAllBtn.style.display = "flex";
@@ -1983,7 +2239,7 @@ function renderFilesModalList() {
     item.className = "builder-modal-file-item";
     const size = formatSize((generatedFiles[n] || "").length);
     item.innerHTML =
-      '<i class="fas fa-file-code"></i>' +
+      icon("fileCode") +
       '<span class="builder-file-name">' +
       escapeHtml(n) +
       "</span>" +
@@ -2087,7 +2343,7 @@ function setSending(v) {
     stopEl = document.createElement("span");
     stopEl.className = "builder-send-stop";
     stopEl.innerHTML =
-      '<i class="fas fa-square"></i>' + escapeHtml(I18n.t("builder.stop"));
+      icon("stop") + escapeHtml(I18n.t("builder.stop"));
     btn.appendChild(stopEl);
   }
   btn.classList.toggle("sending", v);
@@ -2144,17 +2400,24 @@ function bindConfigInputs() {
     });
   }
 
+  // OLED 纯黑模式
+  const oledChk = $("builder-oled-toggle");
+  if (oledChk) {
+    oledChk.checked = isOledOn();
+    oledChk.addEventListener("change", () => applyOledPreference(oledChk.checked));
+  }
+
   // API Key 显示/隐藏
   if (toggleEye && keyInput) {
+    const eyeSvg = icon("eye");
+    const eyeOffSvg = icon("eyeOff");
     toggleEye.addEventListener("click", () => {
       if (keyInput.type === "password") {
         keyInput.type = "text";
-        toggleEye.classList.remove("fa-eye");
-        toggleEye.classList.add("fa-eye-slash");
+        toggleEye.innerHTML = eyeOffSvg;
       } else {
         keyInput.type = "password";
-        toggleEye.classList.remove("fa-eye-slash");
-        toggleEye.classList.add("fa-eye");
+        toggleEye.innerHTML = eyeSvg;
       }
     });
   }
@@ -2314,6 +2577,42 @@ function bindMobileDrawer() {
     else open();
   });
   overlay.addEventListener("click", close);
+
+  // 移动端手势：在侧边栏上左滑关闭
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let tracking = false;
+  panel.addEventListener(
+    "touchstart",
+    (e) => {
+      if (!panel.classList.contains("show")) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      tracking = true;
+    },
+    { passive: true },
+  );
+  panel.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!tracking) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - touchStartX;
+      const dy = Math.abs(t.clientY - touchStartY);
+      // 水平左滑超过 56px 且纵向位移不 dominant 时关闭（不影响纵向滚动）
+      if (dx < -56 && dy < 40) {
+        tracking = false;
+        close();
+      }
+    },
+    { passive: true },
+  );
+  panel.addEventListener("touchend", () => (tracking = false), {
+    passive: true,
+  });
 }
 
 function bindChatActions() {
@@ -2357,12 +2656,9 @@ function bindChatActions() {
 
     const messagesEl = $("builder-messages");
     activeMessagesEl = messagesEl;
-    // 移除欢迎消息
-    const welcome = $("builder-welcome");
-    if (welcome) {
-      const msgWrap = welcome.closest(".builder-msg");
-      if (msgWrap) msgWrap.remove();
-    }
+    // 移除欢迎消息（整个气泡容器）
+    const welcome = $("builder-welcome-msg");
+    if (welcome) welcome.remove();
     updateEmptyState();
 
     // 文档检索由 MCP 负责，无需本地预加载提示
@@ -2437,6 +2733,7 @@ function bindChatActions() {
               if (liveRaw.trim()) {
                 liveMsgContent.classList.remove("streaming");
                 liveMsgContent.innerHTML = renderMarkdown(liveRaw);
+                enhanceMarkdownContainer(liveMsgContent);
               } else {
                 const wrap = liveMsgContent.closest(".builder-msg");
                 if (wrap) wrap.remove();
@@ -2459,7 +2756,7 @@ function bindChatActions() {
               let extraHtml = "";
               if (isWrite) {
                 extraHtml =
-                  '<span class="builder-progress-writing"><i class="fas fa-circle"></i> ' +
+                  '<span class="builder-progress-writing">' +
                   escapeHtml(I18n.t("builder.writing")) +
                   "</span>";
               }
@@ -2533,7 +2830,7 @@ function bindChatActions() {
         appendProgress(
           messagesEl,
           "done",
-          '<i class="fas fa-check"></i> ' + I18n.t("builder.done"),
+          icon("check") + " " + escapeHtml(I18n.t("builder.done")),
         );
       }
     } catch (e) {
@@ -2605,14 +2902,7 @@ function bindChatActions() {
       const messagesEl = $("builder-messages");
       messagesEl.innerHTML = "";
       // 重新添加欢迎消息
-      const welcomeMsg = document.createElement("div");
-      welcomeMsg.className = "builder-msg builder-msg-bot";
-      welcomeMsg.innerHTML =
-        '<div class="builder-msg-avatar"><img src="' +
-        CONFIG.ASSETS.erisAvatar +
-        '" alt="" /></div>' +
-        '<div class="builder-msg-content" id="builder-welcome"></div>';
-      messagesEl.appendChild(welcomeMsg);
+      messagesEl.appendChild(buildWelcomeMessageEl());
       renderWelcome();
       updateEmptyState();
       resetAll();
@@ -2643,10 +2933,71 @@ async function autoLoadDocs() {
  * 14. 欢迎消息渲染
  * ============================================================ */
 
+/** 构建欢迎消息的 DOM 结构（空会话时显示） */
+function buildWelcomeMessageEl() {
+  const msg = document.createElement("div");
+  msg.className = "builder-msg builder-msg-bot";
+  msg.id = "builder-welcome-msg";
+  const avatar = document.createElement("div");
+  avatar.className = "builder-msg-avatar";
+  avatar.innerHTML =
+    '<img src="' + CONFIG.ASSETS.erisAvatar + '" alt="" />';
+  const body = document.createElement("div");
+  body.className = "builder-msg-body";
+  const content = document.createElement("div");
+  content.className = "builder-msg-content builder-md";
+  content.id = "builder-welcome";
+  body.appendChild(content);
+  msg.appendChild(avatar);
+  msg.appendChild(body);
+  return msg;
+}
+
+/** 渲染欢迎页：居中吉祥物 + 标题 + 副标题 + 建议提问 chips */
 function renderWelcome() {
   const el = $("builder-welcome");
   if (!el) return;
-  el.innerHTML = renderMarkdown(I18n.t("builder.welcome"));
+  el.innerHTML = "";
+  const hero = document.createElement("div");
+  hero.className = "builder-welcome-hero";
+
+  const ic = document.createElement("div");
+  ic.className = "builder-welcome-hero-icon";
+  ic.innerHTML = BOT_FACE_SVG;
+
+  const title = document.createElement("h2");
+  title.className = "builder-welcome-title";
+  title.textContent = I18n.t("builder.welcomeTitle");
+
+  const sub = document.createElement("p");
+  sub.className = "builder-welcome-subtitle";
+  sub.textContent = I18n.t("builder.welcomeSubtitle");
+
+  const tipsWrap = document.createElement("div");
+  tipsWrap.className = "builder-welcome-tips";
+  for (const key of ["builder.tip1", "builder.tip2", "builder.tip3", "builder.tip4"]) {
+    const tip = I18n.t(key);
+    if (!tip || tip === key) continue;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "builder-welcome-tip";
+    chip.textContent = tip;
+    chip.addEventListener("click", () => {
+      const input = $("builder-input");
+      if (input) {
+        input.value = tip;
+        input.focus();
+        input.dispatchEvent(new Event("input"));
+      }
+    });
+    tipsWrap.appendChild(chip);
+  }
+
+  hero.appendChild(ic);
+  hero.appendChild(title);
+  hero.appendChild(sub);
+  hero.appendChild(tipsWrap);
+  el.appendChild(hero);
 }
 
 /* ============================================================
@@ -3102,8 +3453,8 @@ function renderSessionList() {
       item.className =
         "builder-session-item" + (id === activeSessionId ? " active" : "");
       item.dataset.id = id;
-      const ic = document.createElement("i");
-      ic.className = "fas fa-message";
+      const ic = document.createElement("span");
+      ic.innerHTML = icon("message");
       const title = document.createElement("span");
       title.className = "builder-session-title";
       title.textContent = s.title || I18n.t("builder.newSession");
@@ -3111,7 +3462,7 @@ function renderSessionList() {
       rename.type = "button";
       rename.className = "builder-session-rename";
       rename.title = I18n.t("builder.renameSession");
-      rename.innerHTML = '<i class="fas fa-pen"></i>';
+      rename.innerHTML = icon("pen");
       rename.addEventListener("click", (e) => {
         e.stopPropagation();
         startSessionRename(item, title, id);
@@ -3119,7 +3470,7 @@ function renderSessionList() {
       const del = document.createElement("button");
       del.type = "button";
       del.className = "builder-session-del";
-      del.innerHTML = '<i class="fas fa-times"></i>';
+      del.innerHTML = ICON_X;
       del.addEventListener("click", async (e) => {
         e.stopPropagation();
         const ok = await showConfirmModal(
@@ -3128,7 +3479,7 @@ function renderSessionList() {
         if (ok) deleteSession(id);
       });
       item.addEventListener("click", () => switchSession(id));
-      item.appendChild(ic);
+      item.appendChild(ic.firstChild);
       item.appendChild(title);
       item.appendChild(rename);
       item.appendChild(del);
@@ -3137,28 +3488,75 @@ function renderSessionList() {
   }
 }
 
+/* ---------- 主题（auto / light / dark 三态 + OLED 纯黑） ---------- */
+
+function getThemePreference() {
+  try {
+    return localStorage.getItem(CONFIG.STORAGE_KEYS.THEME) || "auto";
+  } catch (e) {
+    return "auto";
+  }
+}
+
+function applyThemePreference(pref) {
+  try {
+    localStorage.setItem(CONFIG.STORAGE_KEYS.THEME, pref);
+  } catch (e) {}
+  if (pref === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else if (pref === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    // auto：交给 prefers-color-scheme 媒体查询
+    document.documentElement.removeAttribute("data-theme");
+  }
+}
+
+function applyOledPreference(on) {
+  try {
+    localStorage.setItem(CONFIG.STORAGE_KEYS.OLED, on ? "on" : "off");
+  } catch (e) {}
+  if (on) document.documentElement.setAttribute("data-oled", "on");
+  else document.documentElement.removeAttribute("data-oled");
+}
+
+function isOledOn() {
+  try {
+    return localStorage.getItem(CONFIG.STORAGE_KEYS.OLED) === "on";
+  } catch (e) {
+    return false;
+  }
+}
+
 function bindThemeToggle() {
   const themeBtn = $("builder-theme-toggle");
   if (!themeBtn) return;
   const applyIcon = () => {
-    const cur =
-      document.documentElement.getAttribute("data-theme") || "dark";
-    themeBtn.innerHTML =
-      cur === "dark"
-        ? '<i class="fas fa-sun"></i>'
-        : '<i class="fas fa-moon"></i>';
+    const pref = getThemePreference();
+    const key = pref === "dark" ? "moon" : pref === "light" ? "sun" : "autoTheme";
+    themeBtn.innerHTML = icon(key);
+    themeBtn.title = I18n.t("builder.theme." + pref) || pref;
   };
   applyIcon();
   themeBtn.addEventListener("click", () => {
-    const cur =
-      document.documentElement.getAttribute("data-theme") || "dark";
-    const next = cur === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try {
-      localStorage.setItem("erispulse-builder-theme", next);
-    } catch (e) {}
+    const order = ["auto", "light", "dark"];
+    const cur = getThemePreference();
+    const next = order[(order.indexOf(cur) + 1) % order.length] || "auto";
+    applyThemePreference(next);
     applyIcon();
+    showMessage(I18n.t("builder.theme." + next) || next, "info");
   });
+  // auto 模式下跟随系统切换
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      if (getThemePreference() === "auto") {
+        document.documentElement.removeAttribute("data-theme");
+      }
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
 }
 
 /**
@@ -3167,7 +3565,7 @@ function bindThemeToggle() {
 function updateEmptyState() {
   const chat = document.querySelector(".builder-chat");
   if (!chat) return;
-  chat.classList.toggle("is-empty", !!$("builder-welcome"));
+  chat.classList.toggle("is-empty", !!$("builder-welcome-msg"));
 }
 
 /**
@@ -3178,14 +3576,7 @@ function renderHistory(messagesEl) {
 
   // 仅空会话时显示欢迎消息
   if (!conversation.length) {
-    const welcomeMsg = document.createElement("div");
-    welcomeMsg.className = "builder-msg builder-msg-bot";
-    welcomeMsg.innerHTML =
-      '<div class="builder-msg-avatar"><img src="' +
-      CONFIG.ASSETS.erisAvatar +
-      '" alt="" /></div>' +
-      '<div class="builder-msg-content" id="builder-welcome"></div>';
-    messagesEl.appendChild(welcomeMsg);
+    messagesEl.appendChild(buildWelcomeMessageEl());
     renderWelcome();
   }
 
@@ -3256,7 +3647,7 @@ function renderHistory(messagesEl) {
     appendProgress(
       messagesEl,
       "done",
-      '<i class="fas fa-check"></i> ' + I18n.t("builder.done"),
+      icon("check") + " " + escapeHtml(I18n.t("builder.done")),
     );
   }
   updateEmptyState();
@@ -3440,8 +3831,372 @@ function bindUploadButton() {
 }
 
 /* ============================================================
- * 17. 对外入口
+ * 17.5 ErisPulse 实例控制台（浏览器内沙箱面板）+ 状态 chip
  * ============================================================ */
+
+let sandboxPanelBound = false;
+
+function instanceStateLabel() {
+  return (
+    I18n.t("builder.instance.state." + Sandbox.state) || Sandbox.state
+  );
+}
+
+/** 侧边栏「实例控制台」按钮：文字反映状态，光晕由 data-state 驱动（CSS） */
+function updateSandboxButton() {
+  const btn = $("builder-sandbox-btn");
+  if (!btn) return;
+  btn.setAttribute("data-state", Sandbox.state);
+  const span = btn.querySelector("span");
+  if (!span) return;
+  let label = I18n.t("builder.instance.state." + Sandbox.state);
+  if (!label || label.indexOf("builder.instance.") === 0) {
+    label = I18n.t("builder.instance.openPanel");
+  }
+  span.textContent = label;
+  btn.title = Sandbox.stageText || I18n.t("builder.instance.chipTitle");
+}
+
+/** 控制台面板的状态区与按钮可用性 */
+function updateSandboxPanelStatus() {
+  const status = $("builder-sb-status");
+  const stateText = $("builder-sb-state-text");
+  const stageText = $("builder-sb-stage-text");
+  if (status) status.setAttribute("data-state", Sandbox.state);
+  if (stateText) stateText.textContent = instanceStateLabel();
+  if (stageText) stageText.textContent = Sandbox.stageText || "";
+  const bootBtn = $("builder-sb-boot");
+  const reloadBtn = $("builder-sb-reload");
+  const stopBtn = $("builder-sb-stop");
+  const sendBtn = $("builder-sb-send-event");
+  const hasFiles = Object.keys(generatedFiles).length > 0;
+  const booted = Sandbox.booted && !!Sandbox._worker;
+  const busy = Sandbox.state === "busy";
+  if (bootBtn) bootBtn.disabled = booted || busy;
+  if (reloadBtn) reloadBtn.disabled = !booted || !hasFiles || busy;
+  if (stopBtn) stopBtn.disabled = !booted || busy;
+  if (sendBtn) sendBtn.disabled = !booted || busy;
+}
+
+function appendSandboxLog(entry) {
+  const box = $("builder-sb-logs");
+  if (!box) return;
+  if (entry.stream === "clear") {
+    box.innerHTML = "";
+    return;
+  }
+  const empty = box.querySelector(".log-empty");
+  if (empty) empty.remove();
+  const line = document.createElement("div");
+  line.className =
+    "log-" +
+    (entry.stream === "err"
+      ? "err"
+      : entry.stream === "warn"
+        ? "warn"
+        : entry.stream === "sys"
+          ? "sys"
+          : "out");
+  line.textContent = entry.text;
+  box.appendChild(line);
+  while (box.childNodes.length > 400) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderSandboxSent() {
+  const box = $("builder-sb-sent");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!Sandbox.sent.length) {
+    const p = document.createElement("p");
+    p.className = "builder-empty";
+    p.textContent = I18n.t("builder.instance.emptySent");
+    box.appendChild(p);
+    return;
+  }
+  for (const s of Sandbox.sent.slice(-30).reverse()) {
+    const item = document.createElement("div");
+    item.className = "builder-sb-sent-item";
+    const meta = document.createElement("span");
+    meta.className = "builder-sb-sent-meta";
+    const t = s && s.time ? new Date(s.time * 1000) : new Date();
+    meta.textContent = t.toTimeString().slice(0, 8);
+    const text = document.createElement("span");
+    text.className = "builder-sb-sent-text";
+    text.textContent = formatSentItem(s).replace(/^→ /, "");
+    item.appendChild(meta);
+    item.appendChild(text);
+    box.appendChild(item);
+  }
+}
+
+async function bootInstanceFromUI() {
+  updateSandboxPanelStatus();
+  try {
+    await Sandbox.boot();
+    showMessage(I18n.t("builder.instance.bootDone"), "success");
+  } catch (e) {
+    showMessage(
+      I18n.t("builder.instance.bootFail") + ": " + (e.message || e),
+      "error",
+    );
+  } finally {
+    updateSandboxPanelStatus();
+  }
+}
+
+async function reloadInstanceFromUI() {
+  if (Object.keys(generatedFiles).length === 0) {
+    showMessage(I18n.t("builder.instance.needFiles"), "warning");
+    return;
+  }
+  updateSandboxPanelStatus();
+  try {
+    const report = await Sandbox.runTest({ ...generatedFiles }, []);
+    renderSandboxSent();
+    showMessage(
+      I18n.t("builder.instance.reloadDone") +
+        (report.ok ? "" : " (" + I18n.t("builder.instance.report.fail") + ")"),
+      report.ok ? "success" : "warning",
+    );
+  } catch (e) {
+    showMessage(
+      I18n.t("builder.instance.bootFail") + ": " + (e.message || e),
+      "error",
+    );
+  } finally {
+    updateSandboxPanelStatus();
+  }
+}
+
+async function sendEventFromUI() {
+  const input = $("builder-sb-event-input");
+  const text = ((input && input.value) || "").trim();
+  if (!text) return;
+  let payload = text;
+  // 支持直接粘贴 OneBot12 事件 JSON
+  if (text.startsWith("{") || text.startsWith("[")) {
+    try {
+      payload = JSON.parse(text);
+    } catch (e) {
+      showMessage(I18n.t("builder.instance.eventInvalid"), "error");
+      return;
+    }
+  }
+  updateSandboxPanelStatus();
+  try {
+    await Sandbox.sendUserEvent(payload);
+    if (input) input.value = "";
+    renderSandboxSent();
+    showMessage(I18n.t("builder.instance.eventSent"), "success");
+  } catch (e) {
+    showMessage(String(e.message || e), "error");
+  } finally {
+    updateSandboxPanelStatus();
+  }
+}
+
+function openSandboxPanel() {
+  const modal = $("builder-sandbox-modal");
+  if (!modal) return;
+  modal.style.display = "flex";
+  updateSandboxPanelStatus();
+  renderSandboxSent();
+  const logs = $("builder-sb-logs");
+  if (logs && Sandbox.logs.length) {
+    logs.innerHTML = "";
+    for (const entry of Sandbox.logs.slice(-300)) appendSandboxLog(entry);
+    logs.scrollTop = logs.scrollHeight;
+  }
+}
+
+function closeSandboxPanel() {
+  const modal = $("builder-sandbox-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function bindSandboxPanel() {
+  if (sandboxPanelBound) return;
+  sandboxPanelBound = true;
+
+  const openBtn = $("builder-sandbox-btn");
+  if (openBtn) openBtn.addEventListener("click", openSandboxPanel);
+  const closeBtn = $("builder-sandbox-close");
+  if (closeBtn) closeBtn.addEventListener("click", closeSandboxPanel);
+  const modal = $("builder-sandbox-modal");
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeSandboxPanel();
+    });
+  }
+  const bootBtn = $("builder-sb-boot");
+  if (bootBtn) bootBtn.addEventListener("click", bootInstanceFromUI);
+  const reloadBtn = $("builder-sb-reload");
+  if (reloadBtn) reloadBtn.addEventListener("click", reloadInstanceFromUI);
+  const stopBtn = $("builder-sb-stop");
+  if (stopBtn) {
+    stopBtn.addEventListener("click", () => {
+      Sandbox.stop();
+      updateSandboxPanelStatus();
+      showMessage(I18n.t("builder.instance.stopped"), "info");
+    });
+  }
+  const clearBtn = $("builder-sb-clear");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      Sandbox.clearLogs();
+      Sandbox.clearSent();
+      renderSandboxSent();
+    });
+  }
+  const sendBtn = $("builder-sb-send-event");
+  if (sendBtn) sendBtn.addEventListener("click", sendEventFromUI);
+  const eventInput = $("builder-sb-event-input");
+  if (eventInput) {
+    eventInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendEventFromUI();
+      }
+    });
+  }
+
+  // 订阅沙箱广播（日志 / 状态）
+  Sandbox.onLog((entry) => appendSandboxLog(entry));
+  Sandbox.onStatus(() => {
+    updateSandboxButton();
+    updateSandboxPanelStatus();
+  });
+  updateSandboxButton();
+  updateSandboxPanelStatus();
+}
+
+/* ============================================================
+ * 17.6 新手引导向导
+ * ============================================================ */
+
+let onboardingStep = 0;
+
+function showOnboarding() {
+  const overlay = $("builder-onboarding");
+  if (!overlay) return;
+  overlay.style.display = "flex";
+  const b = settings();
+  const url = $("builder-ob-api-url");
+  const key = $("builder-ob-api-key");
+  const model = $("builder-ob-model");
+  if (url) url.value = b.api_url || "";
+  if (key) key.value = b.api_key || "";
+  if (model) model.value = b.model || "";
+  setOnboardingStep(0);
+}
+
+function hideOnboarding() {
+  const overlay = $("builder-onboarding");
+  if (overlay) overlay.style.display = "none";
+}
+
+function setOnboardingStep(step) {
+  onboardingStep = step;
+  const steps = [$("builder-ob-step-welcome"), $("builder-ob-step-config")];
+  steps.forEach((el, i) => {
+    if (el) el.classList.toggle("active", i === step);
+  });
+  const dots = document.querySelectorAll("#builder-ob-dots span");
+  dots.forEach((d, i) => d.classList.toggle("active", i === step));
+  const nextBtn = $("builder-ob-next");
+  if (nextBtn) {
+    nextBtn.textContent =
+      step === 0
+        ? I18n.t("builder.onboarding.next")
+        : I18n.t("builder.onboarding.finish");
+  }
+  const skipBtn = $("builder-ob-skip");
+  if (skipBtn) skipBtn.style.display = step === 0 ? "" : "none";
+}
+
+function finishOnboarding(saveConfig) {
+  const b = settings();
+  if (saveConfig) {
+    const url = $("builder-ob-api-url");
+    const key = $("builder-ob-api-key");
+    const model = $("builder-ob-model");
+    const persistChk = $("builder-ob-persist");
+    if (url) b.api_url = url.value.trim();
+    if (key) b.api_key = key.value.trim();
+    if (model) b.model = model.value.trim();
+    b.persistKey = persistChk ? persistChk.checked : true;
+    // 同步到设置抽屉
+    const dUrl = $("builder-api-url");
+    const dKey = $("builder-api-key");
+    const dModel = $("builder-model");
+    const dPersist = $("builder-persist-key");
+    if (dUrl) dUrl.value = b.api_url || "";
+    if (dKey) dKey.value = b.api_key || "";
+    if (dModel) dModel.value = b.model || "";
+    if (dPersist) dPersist.checked = b.persistKey;
+  }
+  b.onboarded = true;
+  persist();
+  hideOnboarding();
+}
+
+function bindOnboarding() {
+  const nextBtn = $("builder-ob-next");
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (onboardingStep === 0) {
+        setOnboardingStep(1);
+      } else {
+        finishOnboarding(true);
+        showMessage(I18n.t("builder.onboarding.finish"), "success");
+      }
+    });
+  }
+  const skipBtn = $("builder-ob-skip");
+  if (skipBtn) {
+    skipBtn.addEventListener("click", () => finishOnboarding(false));
+  }
+  const testBtn = $("builder-ob-test");
+  if (testBtn) {
+    testBtn.addEventListener("click", async () => {
+      const url = ($("builder-ob-api-url") || {}).value || "";
+      const key = ($("builder-ob-api-key") || {}).value || "";
+      const model = ($("builder-ob-model") || {}).value || "";
+      const result = $("builder-ob-test-result");
+      const set = (text, cls) => {
+        if (result) {
+          result.textContent = text;
+          result.className = "builder-onboarding-test-result" + (cls ? " " + cls : "");
+        }
+      };
+      if (!url || !model) {
+        set("✗ " + I18n.t("builder.onboarding.testFail"), "fail");
+        return;
+      }
+      set(I18n.t("builder.onboarding.testing"));
+      testBtn.disabled = true;
+      try {
+        // 用 OpenAI 兼容的 /models 端点探测连通性
+        const base = normalizeApiUrl(url).replace(/\/chat\/completions$/i, "");
+        const headers = {};
+        if (key) headers.Authorization = "Bearer " + key;
+        const res = await fetch(base + "/models", { headers });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        set("✓ " + I18n.t("builder.onboarding.testOk"), "ok");
+      } catch (e) {
+        set(
+          "✗ " + I18n.t("builder.onboarding.testFail") + " (" + e.message + ")",
+          "fail",
+        );
+      } finally {
+        testBtn.disabled = false;
+      }
+    });
+  }
+}
+
+
 
 function bindPhaseToggle() {
   const toggle = $("builder-phase-toggle");
@@ -3513,7 +4268,9 @@ function renderMcpServers() {
         "</span>" +
         '<button class="builder-mcp-remove" data-mcp-id="' +
         id +
-        '"><i class="fas fa-times"></i></button>' +
+        '">' +
+        ICON_X +
+        "</button>" +
         "</div>"
       );
     })
@@ -3596,7 +4353,7 @@ function renderKnowledgeBaseInModal() {
 
   if (kb.length === 0) {
     container.innerHTML =
-      '<p class="builder-empty" style="font-size:0.82rem;color:var(--text-secondary)">' + I18n.t("builder.knowledgeBaseEmpty") + '</p>';
+      '<p class="builder-empty">' + escapeHtml(I18n.t("builder.knowledgeBaseEmpty")) + "</p>";
     return;
   }
   container.innerHTML = kb
@@ -3604,19 +4361,23 @@ function renderKnowledgeBaseInModal() {
       (k) =>
         '<div class="builder-kb-item">' +
         '<div class="builder-kb-info">' +
-        '<i class="fas fa-file-lines builder-kb-icon"></i>' +
+        '<span class="builder-kb-icon">' +
+        icon("fileLines") +
+        "</span>" +
         '<span class="builder-kb-title">' +
         escapeHtml(k.title) +
         "</span>" +
         '<span class="builder-kb-meta">' +
         (String(k.content || "").length > 60
-          ? String(k.content || "").slice(0, 60) + "…"
-          : String(k.content || "")) +
+          ? escapeHtml(String(k.content || "").slice(0, 60)) + "…"
+          : escapeHtml(String(k.content || ""))) +
         "</span>" +
         "</div>" +
         '<button class="builder-kb-remove" data-kb="' +
         k.id +
-        '"><i class="fas fa-times"></i></button>' +
+        '">' +
+        ICON_X +
+        "</button>" +
         "</div>",
     )
     .join("");
@@ -3737,6 +4498,7 @@ function bindLanguageDropdown() {
           renderKnowledgeBaseInModal();
           renderSessionList();
           updateInputPlaceholder();
+          updateSandboxButton();
         }
         dropdown.classList.remove("open");
       });
@@ -3765,6 +4527,8 @@ export function setupBuilder() {
   bindMobileDrawer();
   bindSessionIO();
   bindThemeToggle();
+  bindSandboxPanel();
+  bindOnboarding();
   renderWelcome();
   updateEmptyState();
 
@@ -3793,6 +4557,12 @@ export function setupBuilder() {
   bindPhaseToggle();
   renderUploadChips();
   autoLoadDocs();
+
+  // 新手引导：未完成过引导且未配置模型时弹出
+  const b = settings();
+  if (!b.onboarded && (!b.api_url || !b.api_key || !b.model)) {
+    showOnboarding();
+  }
 }
 
 export {
