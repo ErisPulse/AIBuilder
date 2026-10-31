@@ -1,15 +1,16 @@
+[English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [Русский](README.ru.md)
+
 <div align="center">
 
-<img src=".github/assets/ErisPulseLogo.png" width="180" alt="ErisPulse" />
+<img src="https://raw.githubusercontent.com/ErisPulse/ErisPulse/main/.github/assets/ErisPulseLogo.png" width="180" alt="AIBuilder" />
 
-# ErisPulse Builder
+# AIBuilder
 
-**用自然语言生成 ErisPulse 模块，在浏览器里直接试运行**
+**Turn natural language into a ready-to-use ErisPulse module**
 
 <p>
-  <a href="https://github.com/ErisPulse/AIBuilder"><img src="https://img.shields.io/github/stars/ErisPulse/AIBuilder?style=for-the-badge&logo=github&color=brightgreen" alt="Stars"></a>
-  <a href="https://builder.erisdev.com"><img src="https://img.shields.io/badge/立即体验-builder.erisdev.com-C724B1?style=for-the-badge&logo=webpack&logoColor=white" alt="立即体验"></a>
-  <a href="https://github.com/ErisPulse/ErisPulse"><img src="https://img.shields.io/badge/Powered_by-ErisPulse-FF6B9D?style=for-the-badge&logo=bookstack&logoColor=white" alt="ErisPulse"></a>
+  <a href="https://github.com/ErisPulse/ErisPulse/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
+  <img src="https://raw.githubusercontent.com/ErisPulse/.github/main/assets/badges/ecosystem.svg" alt="ErisPulse">
 </p>
 
 </div>
