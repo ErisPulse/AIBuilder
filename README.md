@@ -6,7 +6,7 @@
 
 # AIBuilder
 
-**Turn natural language into a ready-to-use ErisPulse module**
+**自然语言生成可用的 ErisPulse 模块**
 
 <p>
   <a href="https://github.com/ErisPulse/ErisPulse/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License"></a>
