@@ -10,61 +10,40 @@
       content="ErisPulse AI 模块构建器：描述需求，AI 查阅官方文档后生成完整 ErisPulse 模块代码，并可在浏览器内的真实 ErisPulse 实例中试运行。"
     />
 
-    
+    <!-- 防止主题闪烁：auto（跟随系统）/ light / dark，另支持 OLED 纯黑 -->
     <script>
-
       (function () {
-
         try {
-
           var saved = localStorage.getItem("erispulse-builder-theme") || "auto";
-
           if (saved === "dark") {
-
             document.documentElement.setAttribute("data-theme", "dark");
-
           } else if (saved === "light") {
-
             document.documentElement.setAttribute("data-theme", "light");
-
           } else {
-
             // auto：移除显式主题，交给 prefers-color-scheme 媒体查询
-
             document.documentElement.removeAttribute("data-theme");
-
             if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-
               document.documentElement.setAttribute("data-theme", "dark");
-
             }
-
           }
-
           var oled = localStorage.getItem("erispulse-builder-oled");
-
           if (oled === "on") document.documentElement.setAttribute("data-oled", "on");
-
         } catch (e) {
-
           document.documentElement.setAttribute("data-theme", "dark");
-
         }
-
       })();
-
     </script>
 
-     
-    <link rel="stylesheet" href="assets/css/base.css?v=5" />
-    <link rel="stylesheet" href="assets/css/builder.css?v=5" />
+    <!-- 样式：基础 + builder -->
+    <link rel="stylesheet" href="assets/css/base.css?v=6" />
+    <link rel="stylesheet" href="assets/css/builder.css?v=6" />
 
-     
+    <!-- marked.js（Markdown 渲染，builder.js 运行时按需调用 window.marked） -->
     <script
       src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"
       defer
     ></script>
-     
+    <!-- Prism（语法高亮） -->
     <script
       src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"
       defer
@@ -89,10 +68,10 @@
 
   <body>
     <div class="builder-app">
-       
+      <!-- ============ Builder 视图 ============ -->
       <div id="builder-view" class="view-container builder-view-container">
         <div class="builder-layout">
-           
+          <!-- ============ 侧边栏 ============ -->
           <aside class="builder-sidebar" id="builder-sidebar">
             <div class="builder-sidebar-brand">
               <img
@@ -110,7 +89,7 @@
               <span data-i18n="builder.newChat">开启新对话</span>
             </button>
 
-            
+            <!-- 会话历史 -->
             <div class="builder-sidebar-section builder-sessions-section">
               <div class="builder-sidebar-head">
                 <span data-i18n="builder.sessions">会话</span>
@@ -176,7 +155,7 @@
               ></div>
             </div>
 
-             
+            <!-- 已生成文件 -->
             <div class="builder-sidebar-section builder-files-section">
               <div class="builder-sidebar-head">
                 <span data-i18n="builder.generatedFiles">已生成文件</span>
@@ -237,7 +216,7 @@
               </button>
             </div>
 
-             
+            <!-- 底部工具行 -->
             <div class="builder-sidebar-footer">
               <button
                 type="button"
@@ -283,7 +262,7 @@
             </div>
           </aside>
 
-           
+          <!-- ============ 对话区 ============ -->
           <section class="builder-chat">
             <div
               class="builder-mobile-overlay"
@@ -421,7 +400,7 @@
           </section>
         </div>
 
-         
+        <!-- 文件查看模态窗 -->
         <div
           class="builder-modal-overlay"
           id="builder-files-modal"
@@ -458,7 +437,7 @@
           </div>
         </div>
 
-         
+        <!-- 确认模态窗 -->
         <div
           class="builder-modal-overlay"
           id="builder-confirm-modal"
@@ -487,7 +466,7 @@
           </div>
         </div>
 
-         
+        <!-- ============ 实例控制台（浏览器内 ErisPulse 沙箱） ============ -->
         <div
           class="builder-modal-overlay"
           id="builder-sandbox-modal"
@@ -510,7 +489,7 @@
               </button>
             </div>
             <div class="builder-modal-body">
-               
+              <!-- 实例状态 -->
               <div class="builder-sb-status" id="builder-sb-status" data-state="off">
                 <span class="builder-sb-dot"></span>
                 <span class="builder-sb-state-text" id="builder-sb-state-text">
@@ -519,7 +498,7 @@
                 <span class="builder-sb-stage-text" id="builder-sb-stage-text"></span>
               </div>
 
-               
+              <!-- 操作 -->
               <div class="builder-sb-actions">
                 <button
                   type="button"
@@ -556,7 +535,7 @@
                 </button>
               </div>
 
-               
+              <!-- 模拟事件注入 -->
               <p class="builder-sb-section-title" data-i18n="builder.instance.simulateTitle">
                 模拟用户消息（以 mock 平台私信注入）
               </p>
@@ -578,7 +557,7 @@
                 </button>
               </div>
 
-               
+              <!-- 运行日志 -->
               <p class="builder-sb-section-title" data-i18n="builder.instance.logsTitle">
                 运行日志
               </p>
@@ -588,7 +567,7 @@
                 </div>
               </div>
 
-               
+              <!-- 实例发出的消息 -->
               <p class="builder-sb-section-title" data-i18n="builder.instance.sentTitle">
                 实例发出的消息
               </p>
@@ -607,7 +586,7 @@
       </div>
     </div>
 
-     
+    <!-- ============ 设置抽屉（模型 / MCP 服务 / 知识库） ============ -->
     <div class="builder-settings-drawer" id="builder-settings-drawer">
       <div class="builder-settings-overlay" id="builder-settings-overlay"></div>
       <div class="builder-settings-panel">
@@ -618,7 +597,7 @@
           </button>
         </div>
         <div class="builder-config-body">
-           
+          <!-- ===== 模型配置 ===== -->
           <h4 class="builder-config-section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01"/><path d="M9 17h6"/><path d="M2 13v3M22 13v3"/></svg>
             <span data-i18n="builder.config">模型配置</span>
@@ -653,7 +632,7 @@
             <span data-i18n="builder.oledToggle">OLED 纯黑模式（暗色主题下生效）</span>
           </label>
 
-           
+          <!-- ===== MCP 服务 ===== -->
           <h4 class="builder-config-section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg>
             <span data-i18n="builder.mcpServers">MCP 服务</span>
@@ -673,7 +652,7 @@
             <span data-i18n="builder.mcpAdd">添加 MCP 服务</span>
           </button>
 
-           
+          <!-- ===== 知识库 ===== -->
           <h4 class="builder-config-section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
             <span data-i18n="builder.knowledgeBase">知识库</span>
@@ -704,7 +683,7 @@
       </div>
     </div>
 
-     
+    <!-- ============ 新手引导向导 ============ -->
     <div
       class="builder-onboarding-overlay"
       id="builder-onboarding"
@@ -712,7 +691,7 @@
     >
       <div class="builder-onboarding-card">
         <div class="builder-onboarding-body">
-           
+          <!-- 第 1 步：欢迎 -->
           <div class="builder-onboarding-step active" id="builder-ob-step-welcome">
             <div class="builder-onboarding-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M9 13h.01M15 13h.01"/><path d="M9 17h6"/><path d="M2 13v3M22 13v3"/></svg>
@@ -725,7 +704,7 @@
             </p>
           </div>
 
-           
+          <!-- 第 2 步：配置模型 -->
           <div class="builder-onboarding-step" id="builder-ob-step-config">
             <h2 class="builder-onboarding-title" data-i18n="builder.onboarding.configTitle">
               配置模型
@@ -779,7 +758,7 @@
       </div>
     </div>
 
-     
-    <script type="module" src="assets/js/app.js?v=5"></script>
+    <!-- ============ 入口脚本 ============ -->
+    <script type="module" src="assets/js/app.js?v=6"></script>
   </body>
 </html>

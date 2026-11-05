@@ -1,19 +1,13 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * AI 模块构建器
+ *
+ * 核心组件：
+ *  - MCP                      —— 通过 mcp.erisdev.com 检索官方文档（search_docs / read_document / ...）
+ *  - chatOnce                 —— OpenAI 兼容 Chat Completions 调用（URL 原样使用）
+ *  - PLAN_TOOLS / GENERATE_TOOLS / buildSystemPrompt —— 两阶段工具与提示词
+ *  - executeTool / runGeneration —— 工具执行与多轮对话主循环
+ *  - setupBuilder / autoLoadDocs —— UI 绑定与 MCP 预热
+ */
 
 import { CONFIG } from "./config.js";
 import { I18n } from "./i18n.js";
@@ -23,9 +17,9 @@ import { MCP } from "./mcp.js";
 import { ICONS, icon, BOT_FACE_SVG } from "./icons.js";
 import { Sandbox } from "./sandbox.js";
 
-
-
-
+/* ============================================================
+ * 1. 配置访问辅助
+ * ============================================================ */
 
 function settings() {
   if (!state.userSettings.builder) {
@@ -35,7 +29,7 @@ function settings() {
 }
 
 function persist() {
-   
+  // 关闭「记住密钥」时：清除持久化中的密钥，但内存中保留
   const b = state.userSettings.builder;
   if (!b.persistKey && b.api_key) {
     const mem = b.api_key;
@@ -47,18 +41,17 @@ function persist() {
   }
 }
 
+/* ============================================================
+ * 2. LLM 客户端（OpenAI Chat Completions 兼容，自动识别端点）
+ * ============================================================ */
 
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * 自动规范化 API URL：只要不含 /chat/completions 就补上它。
+ * - 已含 /chat/completions → 原样使用
+ * - 其它（仅域名、/v1、自定义前缀等）→ 去掉尾斜杠后补 /chat/completions
+ *   例：https://api.deepseek.com/  → https://api.deepseek.com/chat/completions
+ *       https://api.openai.com/v1 → https://api.openai.com/v1/chat/completions
+ */
 function normalizeApiUrl(url) {
   let u = String(url || "")
     .trim()
@@ -68,20 +61,20 @@ function normalizeApiUrl(url) {
   return u + "/chat/completions";
 }
 
-
-
-
-
-
-
-
+/**
+ * 流式请求一轮对话（SSE 解析 delta.content 与 delta.tool_calls）。
+ * @param {Array} messages 消息列表
+ * @param {Array} tools 工具 Schema 列表
+ * @param {{signal?:AbortSignal, onDelta?:(t:string)=>void}} [opts]
+ * 若服务端不返回 SSE（忽略 stream 参数），自动回退为整包解析。
+ */
 async function chatStream(messages, tools, opts) {
   const b = settings();
   if (!b.api_url) throw new Error(I18n.t("builder.error.noApiUrl"));
   if (!b.api_key) throw new Error(I18n.t("builder.error.noApiKey"));
   if (!b.model) throw new Error(I18n.t("builder.error.noModel"));
 
-   
+  // 自动识别端点：完整 URL / /v1 / 仅域名均可
   const url = normalizeApiUrl(b.api_url);
   const body = {
     model: b.model,
@@ -129,7 +122,7 @@ async function chatStream(messages, tools, opts) {
 
   const onDelta = opts && typeof opts.onDelta === "function" ? opts.onDelta : null;
 
-   
+  // 服务端未返回 SSE：回退整包解析
   const ct = (res.headers.get("content-type") || "").toLowerCase();
   if (!res.body || !ct.includes("text/event-stream")) {
     const data = await res.json();
@@ -146,12 +139,12 @@ async function chatStream(messages, tools, opts) {
     };
   }
 
-   
+  // SSE 流式解析
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
-  const toolCalls = [];  
+  const toolCalls = []; // index -> {id, type, function:{name, arguments}}
 
   const processPayload = (jsonStr) => {
     if (!jsonStr || jsonStr === "[DONE]") return;
@@ -207,7 +200,7 @@ async function chatStream(messages, tools, opts) {
     if (rest.startsWith("data:")) processPayload(rest.slice(5).trim());
   } catch (e) {
     if (e && e.name === "AbortError") {
-       
+      // 中断时携带已累积的部分内容，供上层决定是否保留
       e.partial = {
         content,
         tool_calls: toolCalls.length ? toolCalls : undefined,
@@ -224,9 +217,9 @@ async function chatStream(messages, tools, opts) {
   };
 }
 
-
-
-
+/* ============================================================
+ * 6. 两阶段：工具定义 + 系统提示词
+ * ============================================================ */
 
 function langName() {
   const map = {
@@ -239,14 +232,14 @@ function langName() {
   return map[I18n.getLang()] || I18n.getLang();
 }
 
- 
+/** 当前界面语言的“开始生成”触发词（供系统提示词使用） */
 function startKeyword() {
   const kw = I18n.t("builder.startCommand");
   return kw || "start";
 }
 
 function docIndexSection() {
-   
+  // 文档检索由 MCP 服务端负责
   return "【文档检索】\n可通过 search_docs / read_document / list_documents 检索 ErisPulse 官方文档（由 MCP 服务端实时检索）。";
 }
 
@@ -271,9 +264,9 @@ const CODE_CONVENTIONS = `【代码规范】
 - 适配器需实现 call_api / 平台事件转换、会话类型映射、可选的 Event 平台扩展方法注册（参考文档「适配器：注册平台扩展方法」）
 - 根据用户需求判断是模块还是适配器；两者也可同时开发（同一包可同时声明 module 和 adapter 入口点）`;
 
-
-
-
+/**
+ * 规划阶段系统提示词：仅查阅，与用户讨论方案
+ */
 function buildPlanSystemPrompt() {
   return `你是「小eris」——ErisPulse 框架的官方看板娘，同时也是模块/适配器代码生成专家。
 
@@ -286,7 +279,6 @@ ErisPulse 是基于 Python 的高性能异步机器人开发框架。当前任�
 - search_docs(query, top_k)：关键词检索官方文档（${langName()} 版本，由 MCP 实时检索）。一次可覆盖多个关键词，例如一次搜索"命令注册 事件监听 配置 存储"。
 - read_document(doc_path)：读取某篇文档完整内容。
 - list_documents()：列出所有文档标题与路径。
-- list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现（用于深入了解 API 细节）。
 - ask_question(questions)：向用户提问。questions 是数组，每项含 question（问题）、options（选项）和可选的 multi（true 时为多选）。注意 options 必须是纯字符串数组（如 ["选项A","选项B"]），不要传对象。可一次问多个相关问题。系统会自动为每个问题追加「自定义答案」。澄清需求时优先用它，不要把多个问题堆在一段文字里。
 - web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。查询外部资料、调用开放 API 时使用；ErisPulse 文档仍优先用 search_docs。
 
@@ -310,9 +302,9 @@ ${CODE_CONVENTIONS}
 ${docIndexSection()}`;
 }
 
-
-
-
+/**
+ * 生成阶段系统提示词：拥有写入工具，生成完整源码
+ */
 function buildGenerateSystemPrompt() {
   return `你是「小eris」——ErisPulse 框架的官方看板娘，同时也是模块/适配器代码生成专家。
 
@@ -323,7 +315,6 @@ function buildGenerateSystemPrompt() {
 - search_docs(query, top_k)：关键词检索官方文档（由 MCP 实时检索），返回最相关的片段。优先用它定位内容。
 - read_document(doc_path)：读取某篇文档的完整内容。当你已从检索结果或索引中确定要看哪篇文档时使用。
 - list_documents()：列出所有可用文档的标题与路径。
-- list_source_files() / read_source_file(file_path)：查阅 ErisPulse SDK 源码实现。
 - web_fetch(url, method?, headers?, body?)：联网获取网页内容或调用 HTTP API（浏览器直连，受 CORS 限制，失败会返回说明）。ErisPulse 文档仍优先用 search_docs。
 - write_file(path, content)：写入一个生成的文件（覆盖已存在）。适合创建新文件或大幅重写。
 - patch_file(path, old_text, new_text, replace_all)：在已有文件中模糊替换片段。适合小幅修改（改名、加一行、调整参数）。采用模糊匹配（忽略多余空白差异），old_text 须能唯一定位。
@@ -383,11 +374,11 @@ function buildSystemPrompt() {
   const base = phase === "generate"
     ? buildGenerateSystemPrompt()
     : buildPlanSystemPrompt();
-   
+  // 注入用户知识库
   return base + knowledgeBaseSection();
 }
 
- 
+// 工具 schema：按阶段分组
 const READ_TOOL_SCHEMAS = [
   {
     type: "function",
@@ -427,36 +418,6 @@ const READ_TOOL_SCHEMAS = [
       name: "list_documents",
       description: "列出所有可用的官方文档",
       parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_languages",
-      description: "列出文档支持的所有语言",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_source_files",
-      description: "列出 ErisPulse SDK 的所有 Python 源码文件路径",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read_source_file",
-      description: "读取某个 SDK 源码文件的完整内容（用于了解实现细节）",
-      parameters: {
-        type: "object",
-        properties: {
-          file_path: { type: "string", description: "源码文件路径（来自 list_source_files）" },
-        },
-        required: ["file_path"],
-      },
     },
   },
   {
@@ -654,7 +615,7 @@ const CONFIRM_START_SCHEMA = {
   },
 };
 
- 
+// 实例操作工具（生成阶段可用）：在浏览器内的真实 ErisPulse 实例中运行/调试
 const INSTANCE_TOOL_SCHEMAS = [
   {
     type: "function",
@@ -725,7 +686,7 @@ function getGenerateTools() {
   if (isMcpEnabled()) return READ_TOOL_SCHEMAS.concat(tools);
   return tools;
 }
- 
+// 保留旧常量名以兼容外部引用
 const PLAN_TOOLS = READ_TOOL_SCHEMAS.concat([
   ASK_QUESTION_SCHEMA,
   CONFIRM_START_SCHEMA,
@@ -735,20 +696,20 @@ const GENERATE_TOOLS = READ_TOOL_SCHEMAS.concat(
   INSTANCE_TOOL_SCHEMAS,
 );
 
-
-
-
+/* ============================================================
+ * 7. 已生成文件状态 + 阶段状态
+ * ============================================================ */
 
 let generatedFiles = {};
 let finalized = false;
-let phase = "plan";  
+let phase = "plan"; // 'plan' | 'generate'
 let conversation = [];
-let activeMessagesEl = null;  
+let activeMessagesEl = null; // 当前对话区引用，供 switchPhase 插入系统提示
 let docsHintShown = false;
-let sendMode = "enter";  
-let pendingUploads = [];  
+let sendMode = "enter"; // 'enter' | 'ctrlEnter'
+let pendingUploads = []; // {name, content, size} 待随下一条消息发送的上传文件
 
- 
+// 允许上传的文本文件扩展名（白名单）
 const UPLOAD_TEXT_EXTS = [
   "md",
   "markdown",
@@ -773,7 +734,7 @@ const UPLOAD_TEXT_EXTS = [
   "xml",
   "sql",
 ];
-const UPLOAD_MAX_BYTES = 256 * 1024;  
+const UPLOAD_MAX_BYTES = 256 * 1024; // 单文件上限 256KB
 
 function resetGenerated() {
   generatedFiles = {};
@@ -788,21 +749,21 @@ function resetAll() {
   persistCurrentSession();
 }
 
+/* ============================================================
+ * 8. 工具执行器
+ * ============================================================ */
 
-
-
-
-
-
-
+/**
+ * 转义正则元字符，并把连续空白转为 \s+，从而实现“忽略多余空白差异”的模糊匹配。
+ */
 function buildFuzzyPattern(text) {
   const escaped = String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return escaped.replace(/\s+/g, "\\s+");
 }
 
-
-
-
+/**
+ * 在 content 中查找所有模糊匹配位置（忽略多余空白），返回数组（按位置升序）
+ */
 function fuzzyFindAll(content, oldText) {
   if (!String(oldText).trim()) return [];
   try {
@@ -811,7 +772,7 @@ function fuzzyFindAll(content, oldText) {
     let m;
     while ((m = re.exec(content)) !== null) {
       results.push({ start: m.index, end: m.index + m[0].length });
-      if (m.index === re.lastIndex) re.lastIndex++;  
+      if (m.index === re.lastIndex) re.lastIndex++; // 防御零宽匹配死循环
     }
     return results;
   } catch (e) {
@@ -819,10 +780,10 @@ function fuzzyFindAll(content, oldText) {
   }
 }
 
-
-
-
-
+/**
+ * 将选项归一化为纯文本。部分模型不遵守 Schema，会把选项传成对象
+ * （如 {label, description}），直接 String() 会得到 "[object Object]"。
+ */
 function normalizeOptionText(o) {
   if (o == null) return "";
   if (typeof o === "string") return o.trim();
@@ -844,9 +805,9 @@ function normalizeOptionText(o) {
 const WEB_FETCH_TIMEOUT_MS = 30000;
 const WEB_FETCH_MAX_CHARS = 8000;
 
-
-
-
+/**
+ * 联网能力守卫：设置开关 + 首次确认（可记住选择）
+ */
 async function ensureWebFetchAllowed() {
   const b = settings();
   if (b.webTool === false) return { ok: false, disabled: true };
@@ -862,10 +823,10 @@ async function ensureWebFetchAllowed() {
   return { ok: true };
 }
 
-
-
-
-
+/**
+ * web_fetch 工具实现：浏览器直连 fetch，不做代理。
+ * 失败（CORS/超时/非 2xx）时返回说明文本，供 AI 自行调整策略。
+ */
 async function doWebFetch(args) {
   const allowed = await ensureWebFetchAllowed();
   if (!allowed.ok) {
@@ -959,17 +920,6 @@ async function executeTool(name, args, ctx) {
     case "list_documents": {
       return await MCP.callTool("list_documents", { lang: I18n.getLang() });
     }
-    case "list_languages": {
-      return await MCP.callTool("list_languages", {});
-    }
-    case "list_source_files": {
-      return await MCP.callTool("list_source_files", {});
-    }
-    case "read_source_file": {
-      return await MCP.callTool("read_source_file", {
-        file_path: args.file_path || "",
-      });
-    }
     case "write_file": {
       const path = String(args.path || "").trim();
       if (!path) return "错误：缺少 path";
@@ -994,7 +944,7 @@ async function executeTool(name, args, ctx) {
         return `错误：在 ${path} 中未找到匹配片段。请用 read_file 查看当前内容后再试。`;
       if (!replaceAll && matches.length > 1)
         return `错误：在 ${path} 中找到 ${matches.length} 处匹配，无法唯一定位。请提供更具体的 old_text，或设置 replace_all=true 进行全部替换。`;
-       
+      // 从后往前替换
       const toReplace = replaceAll ? matches : matches.slice(0, 1);
       let updated = content;
       for (let i = toReplace.length - 1; i >= 0; i--) {
@@ -1112,19 +1062,19 @@ async function executeTool(name, args, ctx) {
   }
 }
 
-
-
-
+/* ============================================================
+ * 9. 阶段切换检测 + 多轮对话主循环
+ * ============================================================ */
 
 function isStartCommand(text) {
   const t = String(text || "").trim();
   if (t.length > 80) return false;
-   
+  // 命令式触发词（所有支持语言）
   if (
     /^(开始|開始|开始生成|開始生成|开始吧|開始吧|生成吧|start|begin|generate|go|proceed|gen|はじめる|スタート|開始する|начать|начало|старт|начинай|начнём|погнали|поехали|давай)[!！.。?？]*$/i.test(t)
   )
     return true;
-   
+  // 短消息中包含触发意图
   if (
     t.length <= 30 &&
     /(开始|開始|start|begin|go|generate|proceed|lets? go|начать|начало|старт|начинай|начнём|погнали|поехали|давай|はじめる|開始する)/i.test(t)
@@ -1133,29 +1083,29 @@ function isStartCommand(text) {
   return false;
 }
 
-let activeAbort = null;  
+let activeAbort = null; // 当前生成的 AbortController（供「停止」按钮调用）
 
 function stopGeneration() {
   if (activeAbort) activeAbort.abort();
 }
 
-
-
-
-
-
-
-
+/**
+ * 执行一轮 AI 生成（根据当前 phase 选择工具与系统提示词）
+ * @param {string} requirement 用户输入的可见文本
+ * @param {function} onProgress 进度回调
+ * @param {object} ctx 上下文（包含 askQuestions 等）
+ * @param {Array<{name:string,content:string}>} [attachments] 附带的文件内容（不污染可见输入）
+ */
 async function runGeneration(requirement, onProgress, ctx, attachments) {
   const tools = phase === "generate" ? getGenerateTools() : getPlanTools();
   const sysMsg = { role: "system", content: buildSystemPrompt() };
 
-   
+  // 拼接用户消息：可见文本 + 附带文件（作为上下文，不展示在输入框）
   const messageContent = buildMessageWithAttachments(requirement, attachments);
   const userMsg = { role: "user", content: messageContent };
 
   const messages = [sysMsg, ...conversation, userMsg];
-   
+  // 用户消息先入 conversation
   conversation.push(userMsg);
 
   const MAX_ROUNDS = 30;
@@ -1176,7 +1126,7 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
         assistantMsg = await chatStream(messages, tools, streamOpts);
       } catch (e) {
         if (e && e.name === "AbortError") {
-           
+          // 中断：保留已流式输出的部分内容（无工具调用时才可安全入上下文）
           const partial = e.partial || {};
           if (
             partial.content &&
@@ -1243,9 +1193,9 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
   return { files: { ...generatedFiles }, finalized };
 }
 
-
-
-
+/* ============================================================
+ * 10. ZIP 打包
+ * ============================================================ */
 
 let jszipLoaded = false;
 
@@ -1298,9 +1248,9 @@ async function downloadZip() {
   }
 }
 
-
-
-
+/* ============================================================
+ * 11. UI 渲染辅助
+ * ============================================================ */
 
 function $(id) {
   return document.getElementById(id);
@@ -1313,7 +1263,7 @@ function renderMarkdown(text) {
   return escapeHtml(text || "");
 }
 
- 
+// 统一从 icons.js 取内联 SVG
 const ICON_PAPERCLIP = icon("paperclip");
 const ICON_SQUARE = icon("square", "builder-svg-icon builder-svg-check");
 const ICON_CHECK_SQUARE = icon(
@@ -1330,10 +1280,10 @@ const ICON_CHEVRON_DOWN = icon(
   "builder-svg-icon builder-svg-chevron",
 );
 
-
-
-
-
+/**
+ * 将消息内容容器中的 <pre><code class="language-x"> 增强为
+ * 代码块（语言标签栏 + 复制按钮），并应用 Prism 高亮。
+ */
 function enhanceMarkdownContainer(container) {
   if (!container) return;
   const blocks = container.querySelectorAll("pre > code");
@@ -1364,11 +1314,11 @@ function enhanceMarkdownContainer(container) {
     });
     bar.appendChild(langLabel);
     bar.appendChild(copyBtn);
-     
+    // 原位替换：pre → wrap(pre)
     pre.replaceWith(wrap);
     wrap.appendChild(bar);
     wrap.appendChild(pre);
-     
+    // Prism 高亮
     if (typeof Prism !== "undefined" && lang !== "text") {
       try {
         Prism.highlightElement(code);
@@ -1394,15 +1344,15 @@ function copyTextToClipboard(text) {
   }
 }
 
- 
+// 用户消息中“附带文件”区的起始标记，供历史重现时解析出可见文本
 const ATTACHMENT_HEADER =
   "[以下是用户附带上传的文件内容，供你参考，不要在回复中原样重复：]";
 
-
-
-
-
-
+/**
+ * 解析存储在 conversation 中的 user 消息，拆分出「可见文本」与「附带文件名」。
+ * 合并存储时以 ATTACHMENT_HEADER 为分隔；之前部分为用户输入，之后的
+ * “----- 附带文件：{name} ----”用于提取文件名。
+ */
 function parseStoredUserContent(content) {
   content = String(content || "");
   const idx = content.indexOf(ATTACHMENT_HEADER);
@@ -1418,10 +1368,10 @@ function parseStoredUserContent(content) {
   return { text, fileNames };
 }
 
-
-
-
-
+/**
+ * 构造合并后的用户消息内容（可见文本 + 附带文件块）。
+ * 历史重现时用 parseStoredUserContent 拆回去，因此格式必须与之一致。
+ */
 function buildMessageWithAttachments(requirement, attachments) {
   const text = String(requirement || "");
   if (!Array.isArray(attachments) || attachments.length === 0) return text;
@@ -1447,9 +1397,9 @@ function appendMessage(messagesEl, role, text, attachments) {
   content.className = "builder-msg-content";
 
   if (role === "user") {
-     
-     
-     
+    // 统一处理「可见文本 + 附带文件」：
+    //   1) 实时发送时传入 attachments 数组
+    //   2) 历史重现时传入合并后的字符串（含 ATTACHMENT_HEADER）
     let displayText = String(text || "");
     let fileNames = [];
     if (Array.isArray(attachments) && attachments.length > 0) {
@@ -1467,7 +1417,7 @@ function appendMessage(messagesEl, role, text, attachments) {
         textEl.textContent = trimmed;
         content.appendChild(textEl);
       }
-       
+      // 附件列表（SVG 图标）
       const list = document.createElement("div");
       list.className = "builder-msg-user-attach";
       for (const name of fileNames) {
@@ -1487,7 +1437,7 @@ function appendMessage(messagesEl, role, text, attachments) {
     wrap.appendChild(content);
     wrap.appendChild(buildMessageActs(() => displayText));
   } else {
-     
+    // 机器人消息：头像 + 正文（Markdown，无底色）+ 复制
     const avatar = document.createElement("div");
     avatar.className = "builder-msg-avatar";
     avatar.innerHTML =
@@ -1509,7 +1459,7 @@ function appendMessage(messagesEl, role, text, attachments) {
   return content;
 }
 
- 
+/** 消息操作行（复制按钮，悬停浮现） */
 function buildMessageActs(rawTextGetter) {
   const acts = document.createElement("div");
   acts.className = "builder-msg-acts";
@@ -1534,10 +1484,10 @@ function appendSystemMessage(messagesEl, text) {
   scrollToBottom(messagesEl);
 }
 
-
-
-
-
+/**
+ * 渲染多问题表单卡片，返回 Promise<answers>，answers 为 {key: 回答}
+ * 支持 multi: true 多选（可勾选多个选项，结果以「、」拼接）
+ */
 function renderQuestionForm(messagesEl, questions) {
   return new Promise((resolve) => {
     hideTyping(messagesEl);
@@ -1546,7 +1496,7 @@ function renderQuestionForm(messagesEl, questions) {
     card.className = "builder-question";
 
     const answers = {};
-    const multiAnswers = {};  
+    const multiAnswers = {}; // key -> Set<option>
     let answeredCount = 0;
 
     const submitAll = document.createElement("button");
@@ -1602,18 +1552,18 @@ function renderQuestionForm(messagesEl, questions) {
           .forEach((b) => b.classList.remove("selected"));
       };
 
-       
+      // —— 多选模式 ——
       if (q.multi) {
         multiAnswers[q.key] = new Set();
-        let customValue = null;  
+        let customValue = null; // 已保存的自定义答案；非 null 表示处于「自定义」模式
 
-         
+        // 自定义答案按钮
         const customBtn = document.createElement("button");
         customBtn.type = "button";
         customBtn.className = "builder-question-opt builder-question-custom";
         customBtn.textContent = I18n.t("builder.question.custom");
 
-         
+        // 根据当前状态重新计算 answers[q.key] 与 answeredCount
         const refresh = () => {
           const had = q.key in answers;
           let newVal = null;
@@ -1667,7 +1617,7 @@ function renderQuestionForm(messagesEl, questions) {
               btn.classList.add("selected");
               btn.innerHTML = ICON_CHECK_SQUARE + escapeHtml(opt);
             }
-             
+            // 点击选项时退出自定义模式
             resetCustomVisual();
             refresh();
           });
@@ -1675,7 +1625,7 @@ function renderQuestionForm(messagesEl, questions) {
         });
 
         customBtn.addEventListener("click", () => {
-           
+          // 进入/重入自定义编辑：保留已保存的值
           resetMultiOptions();
           customBtn.classList.add("selected");
           inputWrap.style.display = "flex";
@@ -1685,7 +1635,7 @@ function renderQuestionForm(messagesEl, questions) {
           input.focus();
           refresh();
         });
-         
+        // 阻止点击“确定”时输入框先失焦
         ok.addEventListener("mousedown", (e) => e.preventDefault());
         optWrap.appendChild(customBtn);
 
@@ -1716,8 +1666,8 @@ function renderQuestionForm(messagesEl, questions) {
         return;
       }
 
-       
-      let customValue = null;  
+      // —— 单选模式 ——
+      let customValue = null; // 已保存的自定义答案
       q.options.forEach((opt) => {
         const btn = document.createElement("button");
         btn.type = "button";
@@ -1727,13 +1677,13 @@ function renderQuestionForm(messagesEl, questions) {
           clearSelected();
           btn.classList.add("selected");
           inputWrap.style.display = "none";
-          customValue = null;  
+          customValue = null; // 切回选项，清除自定义
           setAnswer(opt);
         });
         optWrap.appendChild(btn);
       });
 
-       
+      // 自定义答案
       const customBtn = document.createElement("button");
       customBtn.type = "button";
       customBtn.className = "builder-question-opt builder-question-custom";
@@ -1742,13 +1692,13 @@ function renderQuestionForm(messagesEl, questions) {
         clearSelected();
         customBtn.classList.add("selected");
         inputWrap.style.display = "flex";
-         
+        // 恢复上次的自定义值
         input.value = customValue || "";
         input.disabled = false;
         ok.disabled = false;
         input.focus();
       });
-       
+      // 阻止点击“确定”时输入框先失焦
       ok.addEventListener("mousedown", (e) => e.preventDefault());
       optWrap.appendChild(customBtn);
 
@@ -1760,7 +1710,7 @@ function renderQuestionForm(messagesEl, questions) {
         }
         customValue = val;
         setAnswer(val);
-         
+        // 视觉反馈：自定义按钮显示已填写
         customBtn.textContent = val.slice(0, 16) + (val.length > 16 ? "…" : "");
         customBtn.style.fontStyle = "normal";
         input.disabled = true;
@@ -1772,7 +1722,7 @@ function renderQuestionForm(messagesEl, questions) {
           ok.click();
         }
       });
-       
+      // 失焦时若有内容自动保存（点“确定”被 preventDefault 不会触发）
       input.addEventListener("blur", () => {
         if (input.disabled) return;
         const val = input.value.trim();
@@ -1818,13 +1768,13 @@ function hideTyping(messagesEl) {
   if (t) t.remove();
 }
 
-
-
-
-
-
-
-
+/**
+ * 统一确认弹窗
+ */
+/**
+ * 确认弹窗。opts.checkboxLabel 传入时额外渲染一个复选框，
+ * 返回值从 boolean 变为 {ok, checked}；不传时保持 boolean 兼容旧调用。
+ */
 function showConfirmModal(msg, opts) {
   return new Promise((resolve) => {
     const modal = $("builder-confirm-modal");
@@ -1894,13 +1844,13 @@ function appendProgress(messagesEl, kind, html) {
   return wrap;
 }
 
-
-
-
-
-
-
-
+/**
+ * 让某个 progress 条目可展开：折叠态只显示标题+摘要，展开后能看到
+ * AI 请求的参数与完整返回。适用于检索、读文档、提问、读文件等工具。
+ * @param {HTMLElement} wrap - appendProgress 返回的包裹元素
+ * @param {object} args - AI 请求时传入的参数对象
+ * @param {string} fullResult - 工具执行返回的全文
+ */
 function makeProgressExpandable(wrap, args, fullResult) {
   if (!wrap) return;
   if (wrap.dataset.expandable) return;
@@ -1913,7 +1863,7 @@ function makeProgressExpandable(wrap, args, fullResult) {
       args.path &&
       args.content !== undefined
     );
-   
+  // 没有值得展开的内容时放弃
   if (result.trim().length <= 50 && !hasArgs) return;
   wrap.dataset.expandable = "1";
   wrap.classList.add("builder-progress-expandable");
@@ -1921,16 +1871,16 @@ function makeProgressExpandable(wrap, args, fullResult) {
   const item = wrap.querySelector(".builder-progress-item");
   if (!item) return;
 
-   
+  // 折叠箭头（右侧）
   const chevron = document.createElement("span");
   chevron.className = "builder-progress-chevron";
   chevron.innerHTML = ICON_CHEVRON_RIGHT;
   item.appendChild(chevron);
 
-   
+  // 构建详情内容 HTML
   let detailHtml = "";
 
-   
+  // 请求参数区
   if (hasArgs) {
     detailHtml += `<div class="builder-progress-detail-section">
       <div class="builder-progress-detail-title">${escapeHtml(I18n.t("builder.progress.request"))}</div>
@@ -1938,23 +1888,23 @@ function makeProgressExpandable(wrap, args, fullResult) {
     </div>`;
   }
 
-   
+  // 返回结果区
   if (result.trim().length > 0) {
     detailHtml += `<div class="builder-progress-detail-section">
       <div class="builder-progress-detail-title">${escapeHtml(I18n.t("builder.progress.result"))}</div>`;
-     
+    // 结果用 <pre> 保持格式，但使用轻色背景
     detailHtml += `<pre class="builder-progress-detail-pre">${escapeHtml(result)}</pre>`;
     detailHtml += `</div>`;
   }
 
-   
+  // 详情区（默认隐藏）
   const detail = document.createElement("div");
   detail.className = "builder-progress-detail";
   detail.innerHTML = detailHtml;
   detail.style.display = "none";
   wrap.appendChild(detail);
 
-   
+  // 点击切换折叠
   item.addEventListener("click", () => {
     const open = detail.style.display !== "none";
     detail.style.display = open ? "none" : "block";
@@ -1963,10 +1913,10 @@ function makeProgressExpandable(wrap, args, fullResult) {
   });
 }
 
-
-
-
-
+/**
+ * 将工具参数格式化为可读的 HTML（键值对列表）。
+ * 对过长的值（如代码片段）进行截断。
+ */
 function formatRequestDetail(args) {
   if (!args || typeof args !== "object") return escapeHtml(String(args || ""));
   const lines = [];
@@ -1974,11 +1924,11 @@ function formatRequestDetail(args) {
     const label = escapeHtml(key);
     let display;
     if (Array.isArray(val)) {
-       
+      // 数组：每个元素一行
       const items = val
         .map((v, i) => {
           if (typeof v === "object" && v !== null) {
-             
+            // 如 ask_question 的 questions 数组
             const parts = [];
             if (v.key) parts.push(`key: ${escapeHtml(String(v.key))}`);
             if (v.question) parts.push(`${escapeHtml(String(v.question))}`);
@@ -2005,7 +1955,7 @@ function formatRequestDetail(args) {
       display = val ? "true" : "false";
     } else {
       let str = String(val || "");
-       
+      // 过长的值截断
       if (str.length > 300) str = str.slice(0, 300) + "…";
       display = escapeHtml(str);
     }
@@ -2025,9 +1975,6 @@ function iconForTool(tool) {
     read_file: "fileLines",
     delete_file: "trash",
     list_documents: "list",
-    list_languages: "language",
-    list_source_files: "folderTree",
-    read_source_file: "fileCode",
     get_manifest: "folderOpen",
     finalize: "check",
     ask_question: "help",
@@ -2055,7 +2002,7 @@ function toolLabel(tool) {
   return I18n.t("builder.tool." + tool) || tool;
 }
 
- 
+/** 把沙箱运行报告格式化为回传给 AI 的文本（超长截断） */
 function formatInstanceReport(report) {
   const lines = [];
   lines.push(
@@ -2089,7 +2036,7 @@ function formatInstanceReport(report) {
   return out;
 }
 
- 
+/** 把 MockAdapter 捕获的发送记录格式化为一行摘要 */
 function formatSentItem(s) {
   try {
     const segs = Array.isArray(s.message) ? s.message : [];
@@ -2108,9 +2055,9 @@ function formatSentItem(s) {
   }
 }
 
-
-
-
+/**
+ * 根据工具类型生成简洁的参数摘要
+ */
 function formatToolDetail(tool, args) {
   try {
     if (tool === "write_file" || tool === "read_file" || tool === "delete_file")
@@ -2173,7 +2120,7 @@ function updateFileList() {
     if (viewAllBtn) viewAllBtn.style.display = "none";
     return;
   }
-   
+  // 预览最多 3 个
   const preview = names.slice(0, 3);
   for (const n of preview) {
     const item = document.createElement("div");
@@ -2203,7 +2150,7 @@ function updateFileList() {
   }
 }
 
- 
+/* 文件查看模态窗 */
 function openFilesModal() {
   const modal = $("builder-files-modal");
   if (!modal) return;
@@ -2263,7 +2210,7 @@ function renderFileContent(path) {
     '<pre class="builder-code-view"><code>' +
     escapeHtml(content) +
     "</code></pre>";
-   
+  // 尝试语法高亮
   const code = body.querySelector("code");
   if (code && typeof Prism !== "undefined") {
     try {
@@ -2287,7 +2234,6 @@ function bindFilesModal() {
 }
 
 function updateDocsStatus() {
-   
 }
 
 function updatePhaseToggle() {
@@ -2299,14 +2245,14 @@ function updatePhaseToggle() {
   updateInputPlaceholder();
 }
 
-
-
-
+/**
+ * 切换阶段（可由用户点击胶囊或 AI 的 confirm_start 触发）
+ */
 function switchPhase(newPhase, announce) {
   if (newPhase !== "plan" && newPhase !== "generate") return;
   if (newPhase === phase) return;
   phase = newPhase;
-   
+  // 切回规划阶段时重置 finalized
   if (newPhase === "plan") finalized = false;
   updatePhaseToggle();
   updateFileList();
@@ -2327,9 +2273,9 @@ function updateInputPlaceholder() {
   );
 }
 
-
-
-
+/* ============================================================
+ * 12. UI 事件绑定（setupBuilder）
+ * ============================================================ */
 
 let sending = false;
 
@@ -2337,7 +2283,7 @@ function setSending(v) {
   sending = v;
   const btn = $("builder-send");
   if (!btn) return;
-   
+  // 生成中按钮变「停止」图标；停止元素只注入一次
   let stopEl = btn.querySelector(".builder-send-stop");
   if (!stopEl) {
     stopEl = document.createElement("span");
@@ -2347,7 +2293,7 @@ function setSending(v) {
   }
   btn.classList.toggle("sending", v);
   btn.title = v ? I18n.t("builder.stop") : "";
-   
+  // 生成中按钮保持可点击（充当停止键）
   btn.disabled = false;
 }
 
@@ -2389,7 +2335,7 @@ function bindConfigInputs() {
     });
   }
 
-   
+  // 联网请求开关（关闭时撤销已记住的授权）
   const webChk = $("builder-web-tool");
   if (webChk) {
     webChk.checked = b.webTool !== false;
@@ -2400,14 +2346,14 @@ function bindConfigInputs() {
     });
   }
 
-   
+  // OLED 纯黑模式
   const oledChk = $("builder-oled-toggle");
   if (oledChk) {
     oledChk.checked = isOledOn();
     oledChk.addEventListener("change", () => applyOledPreference(oledChk.checked));
   }
 
-   
+  // API Key 显示/隐藏
   if (toggleEye && keyInput) {
     const eyeSvg = icon("eye");
     const eyeOffSvg = icon("eyeOff");
@@ -2422,7 +2368,7 @@ function bindConfigInputs() {
     });
   }
 
-   
+  // 配置模态窗打开/关闭
   bindConfigModal();
 }
 
@@ -2438,17 +2384,16 @@ function bindConfigModal() {
   });
   const hide = () => drawer.classList.remove("open");
   if (close) close.addEventListener("click", hide);
-   
+  // 遮罩层点击关闭抽屉
   const overlay = $("builder-settings-overlay");
   if (overlay) overlay.addEventListener("click", hide);
-   
+  // ESC 关闭
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && drawer.classList.contains("open")) hide();
   });
 }
 
 function bindDocsButtons() {
-   
 }
 
 function bindSendModeDropdown() {
@@ -2456,13 +2401,13 @@ function bindSendModeDropdown() {
   const menu = $("builder-send-mode-menu");
   if (!btn || !menu) return;
 
-   
+  // 从配置恢复
   const b = settings();
   if (b.sendMode === "ctrlEnter") sendMode = "ctrlEnter";
   else sendMode = "enter";
   updateSendModeUI();
 
-   
+  // tag 嵌在提交按钮内，点击/键盘必须阻止表单提交
   const toggle = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -2522,7 +2467,7 @@ function bindSessionIO() {
   const importBtn = $("builder-import-session");
   const importFile = $("builder-import-file");
 
-   
+  // 导出下拉
   if (exportBtn && exportMenu) {
     exportBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2535,7 +2480,7 @@ function bindSessionIO() {
         exportSessions(scope);
       });
     });
-     
+    // 点击外部关闭
     document.addEventListener("click", (e) => {
       if (!exportMenu.classList.contains("open")) return;
       if (exportBtn.contains(e.target) || exportMenu.contains(e.target)) return;
@@ -2543,7 +2488,7 @@ function bindSessionIO() {
     });
   }
 
-   
+  // 导入文件选择
   if (importBtn && importFile) {
     importBtn.addEventListener("click", () => {
       importFile.value = "";
@@ -2578,7 +2523,7 @@ function bindMobileDrawer() {
   });
   overlay.addEventListener("click", close);
 
-   
+  // 移动端手势：在侧边栏上左滑关闭
   let touchStartX = 0;
   let touchStartY = 0;
   let tracking = false;
@@ -2602,7 +2547,7 @@ function bindMobileDrawer() {
       if (!t) return;
       const dx = t.clientX - touchStartX;
       const dy = Math.abs(t.clientY - touchStartY);
-       
+      // 水平左滑超过 56px 且纵向位移不 dominant 时关闭（不影响纵向滚动）
       if (dx < -56 && dy < 40) {
         tracking = false;
         close();
@@ -2622,24 +2567,24 @@ function bindChatActions() {
 
   const send = async () => {
     if (sending) {
-       
+      // 生成中点击发送按钮 = 停止
       stopGeneration();
       return;
     }
     const text = ((input && input.value) || "").trim();
-     
+    // 没有文本且没有附件时不发送
     const hasUploads = pendingUploads.length > 0;
     if (!text && !hasUploads) return;
 
     const b = settings();
     if (!b.api_url || !b.api_key || !b.model) {
-       
+      // 未配置 → 自动打开设置抽屉
       const drawer = $("builder-settings-drawer");
       if (drawer) {
         drawer.classList.add("open");
         renderMcpServers();
         renderKnowledgeBaseInModal();
-         
+        // 聚焦到第一个空的配置项
         setTimeout(() => {
           if (!b.api_url) {
             $("builder-api-url")?.focus();
@@ -2656,25 +2601,25 @@ function bindChatActions() {
 
     const messagesEl = $("builder-messages");
     activeMessagesEl = messagesEl;
-     
+    // 移除欢迎消息（整个气泡容器）
     const welcome = $("builder-welcome-msg");
     if (welcome) welcome.remove();
     updateEmptyState();
 
-     
+    // 文档检索由 MCP 负责
 
-     
+    // 阶段切换检测：规划阶段 → 用户发送「开始」 → 进入生成阶段
     if (phase === "plan" && isStartCommand(text)) {
       switchPhase("generate", true);
     }
 
-     
+    // 用户在已完成的会话里继续发送 → 重置 finalized
     if (finalized) {
       finalized = false;
       persistCurrentSession();
     }
 
-     
+    // 自动命名会话（首次发送时用首条消息）
     if (
       activeSessionId &&
       sessions[activeSessionId] &&
@@ -2686,11 +2631,11 @@ function bindChatActions() {
       renderSessionList();
     }
 
-     
+    // 快照附件并清理输入（不污染可见输入框）
     const attachments = pendingUploads.slice();
     clearPendingUploads();
 
-     
+    // 显示用户消息：有附件时以 SVG 图标列出附件名
     appendMessage(messagesEl, "user", text, attachments);
     input.value = "";
     if (input.style) input.style.height = "";
@@ -2701,8 +2646,8 @@ function bindChatActions() {
       const ctx = {
         askQuestions: (qs) => renderQuestionForm(messagesEl, qs),
       };
-      let currentProgressWrap = null;  
-       
+      let currentProgressWrap = null; // 跟踪当前工具调用的进度条目（供展开详情）
+      // 流式气泡状态（stream_start → delta… → stream_end）
       let liveMsgContent = null;
       let liveTextEl = null;
       let liveRaw = "";
@@ -2745,14 +2690,14 @@ function bindChatActions() {
             appendSystemMessage(messagesEl, I18n.t("builder.stopped"));
           } else if (event.type === "tool") {
             if (event.tool === "ask_question") {
-               
+              // 问题表单由工具内部渲染，不重复显示进度行
             } else {
               const label = toolLabel(event.tool);
               const detail = escapeHtml(
                 formatToolDetail(event.tool, event.args),
               );
               const isWrite = event.tool === "write_file";
-               
+              // 写入文件：添加实时动画标记
               let extraHtml = "";
               if (isWrite) {
                 extraHtml =
@@ -2769,7 +2714,7 @@ function bindChatActions() {
                   (detail ? " <code>" + detail + "</code>" : "") +
                   extraHtml,
               );
-               
+              // 存储请求参数供展开详情（write_file 内容太长不存）
               if (
                 event.tool !== "write_file" &&
                 event.args &&
@@ -2781,14 +2726,14 @@ function bindChatActions() {
             }
           } else if (event.type === "tool_result") {
             if (event.tool === "ask_question") {
-               
+              // 用户已作答，显示打字指示等待下一轮
               showTyping(messagesEl);
             } else {
               const wrap = currentProgressWrap;
               const last = wrap && wrap.querySelector(".builder-progress-item");
               if (last) {
                 if (event.tool === "write_file") {
-                   
+                  // 写入完成：替换动画标记为完成状态 + 文件大小
                   const writingEl = last.querySelector(
                     ".builder-progress-writing",
                   );
@@ -2808,7 +2753,7 @@ function bindChatActions() {
                   last.classList.add("done");
                 }
               }
-               
+              // 可点开查看完整返回（结果仅在展开时显示，不显示在折叠行）
               if (wrap) {
                 makeProgressExpandable(
                   wrap,
@@ -2856,28 +2801,28 @@ function bindChatActions() {
       input.style.height = "auto";
       input.style.height = Math.min(140, input.scrollHeight) + "px";
     });
-     
+    // 根据 sendMode 决定发送/换行键位
     input.addEventListener("keydown", (e) => {
-       
+      // 生成中按 Esc 停止
       if (e.key === "Escape" && sending) {
         e.preventDefault();
         stopGeneration();
         return;
       }
       if (e.key !== "Enter") return;
-      if (sending) return;  
+      if (sending) return; // 生成中 Enter 不触发发送（停止请用按钮或 Esc）
       const isCtrl = e.ctrlKey || e.metaKey;
       if (sendMode === "ctrlEnter") {
-         
+        // Ctrl+Enter 发送，纯 Enter 换行
         if (isCtrl) {
           e.preventDefault();
           send();
         }
-         
+        // 否则放行，浏览器默认插入换行
       } else {
-         
+        // 默认：Enter 发送，Ctrl+Enter 换行
         if (isCtrl) {
-           
+          // 手动插入换行
           e.preventDefault();
           const s = input.selectionStart;
           const en = input.selectionEnd;
@@ -2892,7 +2837,7 @@ function bindChatActions() {
     });
   }
 
-   
+  // 发送模式下拉
   bindSendModeDropdown();
 
   if (clearBtn) {
@@ -2901,7 +2846,7 @@ function bindChatActions() {
       if (!ok) return;
       const messagesEl = $("builder-messages");
       messagesEl.innerHTML = "";
-       
+      // 重新添加欢迎消息
       messagesEl.appendChild(buildWelcomeMessageEl());
       renderWelcome();
       updateEmptyState();
@@ -2918,22 +2863,22 @@ function bindChatActions() {
   bindUploadButton();
 }
 
-
-
-
+/* ============================================================
+ * 13. MCP 预热（可选）
+ * ============================================================ */
 
 async function autoLoadDocs() {
-   
+  // 后台预热 MCP 连接（非阻塞，首次工具调用时也会自动初始化）
   MCP.ensureInitialized().catch((e) => {
     console.warn("MCP 预热失败（将在首次工具调用时重试）:", e);
   });
 }
 
+/* ============================================================
+ * 14. 欢迎消息渲染
+ * ============================================================ */
 
-
-
-
- 
+/** 构建欢迎消息的 DOM 结构（空会话时显示） */
 function buildWelcomeMessageEl() {
   const msg = document.createElement("div");
   msg.className = "builder-msg builder-msg-bot";
@@ -2953,7 +2898,7 @@ function buildWelcomeMessageEl() {
   return msg;
 }
 
- 
+/** 渲染欢迎页：居中吉祥物 + 标题 + 副标题 + 建议提问 chips */
 function renderWelcome() {
   const el = $("builder-welcome");
   if (!el) return;
@@ -3000,12 +2945,12 @@ function renderWelcome() {
   el.appendChild(hero);
 }
 
-
-
-
+/* ============================================================
+ * 15. 会话历史（本地持久化）
+ * ============================================================ */
 
 const SESSIONS_KEY = "erispulse-builder-sessions";
-let sessions = {};  
+let sessions = {}; // id -> session
 let activeSessionId = null;
 
 function loadSessions() {
@@ -3034,7 +2979,7 @@ function saveSessions() {
 
 function applySessionToMemory(s) {
   var raw = Array.isArray(s.conversation) ? s.conversation : [];
-   
+  // 迁移旧版会话（用户消息在末尾 → 用户消息在对应回复前方）
   var migrated = [];
   var buffer = [];
   for (var i = 0; i < raw.length; i++) {
@@ -3064,20 +3009,20 @@ function persistCurrentSession() {
   saveSessions();
 }
 
+/* ============================================================
+ * 文件历史 / 撤销重做
+ * ============================================================ */
 
-
-
-
-let fileUndoStack = [];  
+let fileUndoStack = []; // 每项: { files: {...} }
 let fileRedoStack = [];
 
-
-
-
+/**
+ * 在文件变更前快照当前状态（推入 undo 栈，清空 redo）
+ */
 function pushFileSnapshot() {
   fileUndoStack.push({ files: { ...generatedFiles } });
   fileRedoStack = [];
-   
+  // 限制历史长度
   if (fileUndoStack.length > 50) fileUndoStack.shift();
   updateUndoRedoUI();
 }
@@ -3118,13 +3063,13 @@ function resetUndoRedo() {
   updateUndoRedoUI();
 }
 
+/* ============================================================
+ * 知识库（用户自定义上下文）
+ * ============================================================ */
 
-
-
-
-
-
-
+/**
+ * 添加一条知识库条目（存储在当前会话中）
+ */
 function addKnowledgeEntry(title, content) {
   if (!activeSessionId || !sessions[activeSessionId]) return;
   const s = sessions[activeSessionId];
@@ -3146,9 +3091,9 @@ function removeKnowledgeEntry(kbId) {
   saveSessions();
 }
 
-
-
-
+/**
+ * 构建知识库注入文本（并入系统提示词）
+ */
 function knowledgeBaseSection() {
   if (!activeSessionId || !sessions[activeSessionId]) return "";
   const s = sessions[activeSessionId];
@@ -3170,15 +3115,14 @@ function knowledgeBaseSection() {
 }
 
 function renderKnowledgeBase() {
-   
 }
 
-
-
-
-
+/**
+ * 导出会话为 JSON 文件
+ * @param {"current"|"all"} scope
+ */
 function exportSessions(scope) {
-   
+  // 先同步当前会话到 sessions 对象
   persistCurrentSession();
 
   let out = {};
@@ -3230,10 +3174,10 @@ function exportSessions(scope) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-
-
-
-
+/**
+ * 从文件导入会话（合并不覆盖已有数据）
+ * @param {File} file
+ */
 async function importSessionsFromFile(file) {
   if (!file) return;
   let text;
@@ -3251,12 +3195,12 @@ async function importSessionsFromFile(file) {
     return;
   }
 
-   
+  // 兼容两种结构：带信封 / 裸 sessions 对象 / 单个 session
   let incoming = {};
   if (data && data.type === "erispulse-builder-sessions" && data.sessions) {
     incoming = data.sessions;
   } else if (data && typeof data === "object" && data.conversation) {
-     
+    // 单个会话对象
     incoming = { [data.id || "imported"]: data };
   } else if (
     data &&
@@ -3295,7 +3239,7 @@ async function importSessionsFromFile(file) {
     return;
   }
 
-   
+  // 切换到最近导入的会话
   saveSessions();
   renderSessionList();
   const lastImportedId = Object.keys(sessions)
@@ -3315,7 +3259,7 @@ function newSession() {
     generatedFiles: {},
     phase: "plan",
     finalized: false,
-    knowledgeBase: [],  
+    knowledgeBase: [], // [{id, title, content, timestamp}]
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -3336,7 +3280,7 @@ function switchSession(id) {
   if (!s) return;
   activeSessionId = id;
   applySessionToMemory(s);
-  s.conversation = conversation;  
+  s.conversation = conversation; // 保留迁移结果
   saveSessions();
   const messagesEl = $("builder-messages");
   activeMessagesEl = messagesEl;
@@ -3345,7 +3289,7 @@ function switchSession(id) {
   updatePhaseToggle();
   resetUndoRedo();
   renderSessionList();
-   
+  // 切换会话时清除未发送的附件
   clearPendingUploads();
 }
 
@@ -3431,7 +3375,7 @@ function renderSessionList() {
     list.appendChild(p);
     return;
   }
-   
+  // 按更新时间倒序，再按「今天 / 昨天 / 7 天内 / 更早」分组
   const ids = Object.keys(sessions).sort(
     (a, b) => (sessions[b].updatedAt || 0) - (sessions[a].updatedAt || 0),
   );
@@ -3488,7 +3432,7 @@ function renderSessionList() {
   }
 }
 
- 
+/* ---------- 主题（auto / light / dark 三态 + OLED 纯黑） ---------- */
 
 function getThemePreference() {
   try {
@@ -3507,7 +3451,7 @@ function applyThemePreference(pref) {
   } else if (pref === "light") {
     document.documentElement.setAttribute("data-theme", "light");
   } else {
-     
+    // auto：交给 prefers-color-scheme 媒体查询
     document.documentElement.removeAttribute("data-theme");
   }
 }
@@ -3546,7 +3490,7 @@ function bindThemeToggle() {
     applyIcon();
     showMessage(I18n.t("builder.theme." + next) || next, "info");
   });
-   
+  // auto 模式下跟随系统切换
   if (window.matchMedia) {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
@@ -3559,28 +3503,28 @@ function bindThemeToggle() {
   }
 }
 
-
-
-
+/**
+ * 空会话态管理：欢迎消息存在时聊天区进入 hero 居中态
+ */
 function updateEmptyState() {
   const chat = document.querySelector(".builder-chat");
   if (!chat) return;
   chat.classList.toggle("is-empty", !!$("builder-welcome-msg"));
 }
 
-
-
-
+/**
+ * 根据当前会话历史重建对话区（切换会话 / 新建会话时调用）
+ */
 function renderHistory(messagesEl) {
   messagesEl.innerHTML = "";
 
-   
+  // 仅空会话时显示欢迎消息
   if (!conversation.length) {
     messagesEl.appendChild(buildWelcomeMessageEl());
     renderWelcome();
   }
 
-  let progressMap = {};  
+  let progressMap = {}; // call_id → progress wrap DOM
   for (const msg of conversation) {
     if (msg.role === "user") {
       appendMessage(messagesEl, "user", msg.content || "");
@@ -3609,7 +3553,7 @@ function renderHistory(messagesEl) {
               toolLabel(fn) +
               (detail ? " <code>" + detail + "</code>" : ""),
           );
-           
+          // 存储请求参数供展开详情
           if (fn !== "write_file" && Object.keys(args).length > 0) {
             wrap.storedArgs = args;
           }
@@ -3622,7 +3566,7 @@ function renderHistory(messagesEl) {
       const target = wrap && wrap.querySelector(".builder-progress-item");
       if (target) {
         if (target.classList.contains("write")) {
-           
+          // 写入类工具：显示完成标记
           target.classList.add("done");
           const writingEl = target.querySelector(".builder-progress-writing");
           if (writingEl) {
@@ -3637,7 +3581,7 @@ function renderHistory(messagesEl) {
           }
         }
       }
-       
+      // 历史重现时同样只显示请求，结果仅在展开时可见
       if (wrap) {
         makeProgressExpandable(wrap, wrap.storedArgs || null, msg.content);
       }
@@ -3654,18 +3598,18 @@ function renderHistory(messagesEl) {
   scrollToBottom(messagesEl);
 }
 
+/* ============================================================
+ * 16. 用户文件上传（仅常见文本类型，随下一条消息拼接进上下文）
+ * ============================================================ */
 
-
-
-
-
-
-
+/**
+ * 判断文件是否为可解析的文本类型（依据扩展名 + MIME 提示）
+ */
 function isTextUpload(file) {
   const name = (file.name || "").toLowerCase();
   const ext = name.split(".").pop() || "";
   if (UPLOAD_TEXT_EXTS.includes(ext)) return true;
-   
+  // 没有「常见」扩展名时，看 MIME 是否以 text/ 或 application/json 等开头
   const mime = (file.type || "").toLowerCase();
   if (
     mime.startsWith("text/") ||
@@ -3678,9 +3622,9 @@ function isTextUpload(file) {
   return false;
 }
 
-
-
-
+/**
+ * 以文本方式读取文件
+ */
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -3690,9 +3634,9 @@ function readFileAsText(file) {
   });
 }
 
-
-
-
+/**
+ * 处理用户选择的文件：校验类型与大小，逐个读取后加入 pendingUploads
+ */
 async function handleUploadFiles(fileList) {
   const files = Array.from(fileList || []);
   if (files.length === 0) return;
@@ -3732,9 +3676,9 @@ async function handleUploadFiles(fileList) {
   if (added > 0) renderUploadChips();
 }
 
-
-
-
+/**
+ * 渲染输入框上方的「待发送附件」chip 列表
+ */
 function renderUploadChips() {
   const wrap = $("builder-upload-chips");
   if (!wrap) return;
@@ -3773,9 +3717,9 @@ function clearPendingUploads() {
   renderUploadChips();
 }
 
-
-
-
+/**
+ * 绑定上传按钮 + 隐藏的 file input
+ */
 function bindUploadButton() {
   const btn = $("builder-upload-btn");
   const fileInput = $("builder-upload-input");
@@ -3789,7 +3733,7 @@ function bindUploadButton() {
     await handleUploadFiles(fileInput.files);
     fileInput.value = "";
   });
-   
+  // 支持拖拽到输入区
   const inputBar = document.querySelector(".builder-input-bar");
   if (inputBar && !inputBar.dataset.uploadBound) {
     inputBar.dataset.uploadBound = "1";
@@ -3808,7 +3752,7 @@ function bindUploadButton() {
       }
     });
   }
-   
+  // 粘贴文本文件（部分浏览器支持）
   const inputEl = $("builder-input");
   if (inputEl && !inputEl.dataset.pasteBound) {
     inputEl.dataset.pasteBound = "1";
@@ -3830,9 +3774,9 @@ function bindUploadButton() {
   }
 }
 
-
-
-
+/* ============================================================
+ * 17.5 ErisPulse 实例控制台（浏览器内沙箱面板）+ 状态 chip
+ * ============================================================ */
 
 let sandboxPanelBound = false;
 
@@ -3842,7 +3786,7 @@ function instanceStateLabel() {
   );
 }
 
- 
+/** 侧边栏「实例控制台」按钮：文字反映状态，光晕由 data-state 驱动（CSS） */
 function updateSandboxButton() {
   const btn = $("builder-sandbox-btn");
   if (!btn) return;
@@ -3857,7 +3801,7 @@ function updateSandboxButton() {
   btn.title = Sandbox.stageText || I18n.t("builder.instance.chipTitle");
 }
 
- 
+/** 控制台面板的状态区与按钮可用性 */
 function updateSandboxPanelStatus() {
   const status = $("builder-sb-status");
   const stateText = $("builder-sb-state-text");
@@ -3974,7 +3918,7 @@ async function sendEventFromUI() {
   const text = ((input && input.value) || "").trim();
   if (!text) return;
   let payload = text;
-   
+  // 支持直接粘贴 OneBot12 事件 JSON
   if (text.startsWith("{") || text.startsWith("[")) {
     try {
       payload = JSON.parse(text);
@@ -4061,7 +4005,7 @@ function bindSandboxPanel() {
     });
   }
 
-   
+  // 订阅沙箱广播（日志 / 状态）
   Sandbox.onLog((entry) => appendSandboxLog(entry));
   Sandbox.onStatus(() => {
     updateSandboxButton();
@@ -4071,9 +4015,9 @@ function bindSandboxPanel() {
   updateSandboxPanelStatus();
 }
 
-
-
-
+/* ============================================================
+ * 17.6 新手引导向导
+ * ============================================================ */
 
 let onboardingStep = 0;
 
@@ -4126,7 +4070,7 @@ function finishOnboarding(saveConfig) {
     if (key) b.api_key = key.value.trim();
     if (model) b.model = model.value.trim();
     b.persistKey = persistChk ? persistChk.checked : true;
-     
+    // 同步到设置抽屉
     const dUrl = $("builder-api-url");
     const dKey = $("builder-api-key");
     const dModel = $("builder-model");
@@ -4177,7 +4121,7 @@ function bindOnboarding() {
       set(I18n.t("builder.onboarding.testing"));
       testBtn.disabled = true;
       try {
-         
+        // 用 OpenAI 兼容的 /models 端点探测连通性
         const base = normalizeApiUrl(url).replace(/\/chat\/completions$/i, "");
         const headers = {};
         if (key) headers.Authorization = "Bearer " + key;
@@ -4210,13 +4154,12 @@ function bindPhaseToggle() {
     });
   });
 
-   
   const undoBtn = $("builder-undo");
   if (undoBtn) undoBtn.addEventListener("click", undoFiles);
   const redoBtn = $("builder-redo");
   if (redoBtn) redoBtn.addEventListener("click", redoFiles);
 
-   
+  // MCP 恢复默认
   const restoreBtn = $("builder-mcp-restore");
   if (restoreBtn) {
     restoreBtn.addEventListener("click", async () => {
@@ -4231,13 +4174,11 @@ function bindPhaseToggle() {
       showMessage(I18n.t("builder.mcpRestoreDone"), "success");
     });
   }
-
-   
 }
 
-
-
-
+/* ============================================================
+ * MCP 服务管理（配置模态窗内）
+ * ============================================================ */
 
 function renderMcpServers() {
   const container = $("builder-mcp-list");
@@ -4276,7 +4217,7 @@ function renderMcpServers() {
     })
     .join("");
 
-   
+  // 切换启用
   container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     cb.addEventListener("change", () => {
       const id = cb.getAttribute("data-mcp-id");
@@ -4287,7 +4228,7 @@ function renderMcpServers() {
       }
     });
   });
-   
+  // 删除
   container.querySelectorAll(".builder-mcp-remove").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-mcp-id");
@@ -4341,9 +4282,9 @@ function bindMcpAddForm() {
   if (cancelBtn) cancelBtn.addEventListener("click", hide);
 }
 
-
-
-
+/* ============================================================
+ * 知识库管理（配置模态窗内）
+ * ============================================================ */
 
 function renderKnowledgeBaseInModal() {
   const container = $("builder-kb-list-inline");
@@ -4429,7 +4370,7 @@ function bindKbActions() {
       renderKnowledgeBaseInModal();
     });
   }
-   
+  // 导入文件
   if (importFileBtn && fileInput) {
     importFileBtn.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => {
@@ -4448,9 +4389,8 @@ function bindKbActions() {
   }
 }
 
- 
 function promptAddKnowledge() {
-   
+  // 保留空壳以兼容旧引用
 }
 
 function bindLanguageDropdown() {
@@ -4467,7 +4407,7 @@ function bindLanguageDropdown() {
     label.textContent = codes[cur] || cur;
   };
 
-   
+  // 渲染下拉列表（根据当前语言标记 active）
   const renderOptions = () => {
     dropdown.innerHTML = langs
       .map((l) => {
@@ -4483,7 +4423,7 @@ function bindLanguageDropdown() {
         );
       })
       .join("");
-     
+    // 绑定点击
     dropdown.querySelectorAll("button").forEach((opt) => {
       opt.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -4492,7 +4432,7 @@ function bindLanguageDropdown() {
           I18n.setLang(code);
           updateLabel();
           renderOptions();
-           
+          // 重新渲染所有动态内容
           renderWelcome();
           renderMcpServers();
           renderKnowledgeBaseInModal();
@@ -4508,7 +4448,7 @@ function bindLanguageDropdown() {
   updateLabel();
   renderOptions();
 
-   
+  // 切换
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     dropdown.classList.toggle("open");
@@ -4532,7 +4472,7 @@ export function setupBuilder() {
   renderWelcome();
   updateEmptyState();
 
-   
+  // 会话初始化
   const newBtn = $("builder-new-session");
   if (newBtn) {
     newBtn.addEventListener("click", () => {
@@ -4558,7 +4498,7 @@ export function setupBuilder() {
   renderUploadChips();
   autoLoadDocs();
 
-   
+  // 新手引导：未完成过引导且未配置模型时弹出
   const b = settings();
   if (!b.onboarded && (!b.api_url || !b.api_key || !b.model)) {
     showOnboarding();

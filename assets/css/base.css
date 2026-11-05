@@ -1,12 +1,11 @@
+/* ============================================================
+ * ErisPulse Builder — 基础样式与主题变量
+ *
+ * 蓝青主色 (#3aa5dc) + 中性灰阶 + 大圆角(16/20px) + 克制阴影
+ * 三套主题：亮色 / 暗色 / OLED 纯黑，支持跟随系统 (auto)
+ * ============================================================ */
 
-
-
-
-
-
-
-
- 
+/* ---------- 亮色主题 ---------- */
 :root {
   --qvq-bg: #f6f7f9;
   --qvq-bg-s: #eef0f3;
@@ -48,17 +47,17 @@
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --qvq-mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
 
-   
+  /* 圆角体系 */
   --qvq-r-lg: 20px;
   --qvq-r-md: 16px;
   --qvq-r-sm: 10px;
   --qvq-r-chip: 99px;
 
-   
+  /* 过渡 */
   --qvq-ease: 0.18s ease;
   --qvq-pop-ease: cubic-bezier(0.2, 0.8, 0.3, 1);
 
-   
+  /* ---- 兼容别名（旧代码/内联样式引用） ---- */
   --primary: var(--qvq-accent);
   --primary-rgb: 58, 165, 220;
   --primary-dark: var(--qvq-accent-fill);
@@ -73,7 +72,7 @@
   --gradient-primary: none;
 }
 
- 
+/* ---------- 暗色主题 ---------- */
 [data-theme="dark"] {
   --qvq-bg: #0f1115;
   --qvq-bg-s: #161a20;
@@ -112,7 +111,7 @@
   --qvq-pr-bd: rgba(142, 194, 247, 0.28);
 }
 
- 
+/* 跟随系统：未显式选择主题时，暗色偏好走暗色变量 */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --qvq-bg: #0f1115;
@@ -153,7 +152,7 @@
   }
 }
 
- 
+/* ---------- OLED 纯黑（设置内开启，叠加在暗色上） ---------- */
 [data-oled="on"][data-theme="dark"],
 [data-oled="on"]:not([data-theme="light"]):not([data-theme="dark"]) {
   --qvq-bg: #000000;
@@ -165,7 +164,7 @@
   --qvq-shadow-hover: 0 6px 18px -6px rgba(0, 0, 0, 0.75);
 }
 
- 
+/* ---------- Reset / 基础 ---------- */
 * {
   box-sizing: border-box;
 }
@@ -188,7 +187,7 @@ body {
   overscroll-behavior-y: none;
 }
 
- 
+/* 触屏：去除点击高亮，禁用文本选择误触（输入框除外） */
 @media (hover: none), (pointer: coarse) {
   button {
     -webkit-user-select: none;
@@ -211,7 +210,7 @@ a {
   outline-offset: 2px;
 }
 
- 
+/* ---------- 滚动条 ---------- */
 .builder-app ::-webkit-scrollbar,
 .builder-app ::-webkit-scrollbar {
   width: 10px;
@@ -231,7 +230,7 @@ a {
   background-clip: content-box;
 }
 
- 
+/* ---------- 按钮 ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -309,7 +308,7 @@ a {
   color: var(--qvq-er-c);
 }
 
- 
+/* ---------- 通用输入框 ---------- */
 input[type="text"],
 input[type="password"],
 input[type="url"],
@@ -317,13 +316,13 @@ textarea {
   font-family: inherit;
 }
 
- 
+/* ---------- 全屏 builder 布局根 ---------- */
 .builder-app {
   height: 100vh;
   height: 100dvh;
 }
 
- 
+/* ---------- 动画 ---------- */
 @keyframes qvq-rise {
   from {
     opacity: 0;
@@ -373,7 +372,7 @@ textarea {
   }
 }
 
- 
+/* prefers-reduced-motion：关闭全部动画 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -384,7 +383,7 @@ textarea {
   }
 }
 
- 
+/* ---------- markdown 渲染基础（消息内容区） ---------- */
 .builder-md h1,
 .builder-md h2,
 .builder-md h3,

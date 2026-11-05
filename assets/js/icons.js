@@ -1,9 +1,9 @@
-
-
-
-
-
-
+/**
+ * ErisPulse Builder — 内联 SVG 图标库
+ *
+ * 线性描边图标（stroke: currentColor, fill: none）。
+ * 所有图标 24×24 viewBox，粗细 1.8。
+ */
 
 function svg(paths, cls) {
   return (
@@ -121,11 +121,11 @@ export const ICONS = {
   pen: svg('<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>'),
 };
 
- 
+/** 按名称取图标 HTML */
 export function icon(name, cls) {
   return ICONS[name] || ICONS.wrench;
 }
 
- 
+/** 机器人脸（虚线描边） */
 export const BOT_FACE_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3" stroke-dasharray="3 2"/><circle cx="9" cy="13" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1.1" fill="currentColor" stroke="none"/><path d="M12 7V4" stroke-dasharray="2 2"/><circle cx="12" cy="3" r="1" fill="currentColor" stroke="none"/><path d="M4 17l-2 2M20 17l2 2" stroke-dasharray="2 2"/></svg>';

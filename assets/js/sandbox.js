@@ -1,15 +1,6 @@
-
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * ErisPulse Builder — 浏览器内 ErisPulse 实例管理器（主线程）
+ */
 
 import { CONFIG } from "./config.js";
 
@@ -19,17 +10,17 @@ const logListeners = new Set();
 const statusListeners = new Set();
 
 const Sandbox = {
-  state: "off",  
+  state: "off", // off|allocating|downloading|installing|ready|running|busy|error
   stageText: "",
-  logs: [],  
-  sent: [],  
+  logs: [], // {stream, text, t}
+  sent: [], // MockAdapter 捕获的实例发送记录
   booted: false,
 
   _worker: null,
   _seq: 0,
-  _pending: new Map(),  
+  _pending: new Map(), // id -> {resolve, reject, timer}
 
-   
+  /* ---------- 订阅 ---------- */
   onLog(fn) {
     logListeners.add(fn);
     return () => logListeners.delete(fn);
@@ -60,7 +51,7 @@ const Sandbox = {
     this._emitStatus();
   },
 
-   
+  /* ---------- 日志 ---------- */
   _pushLog(stream, text) {
     const entry = { stream, text, t: Date.now() };
     this.logs.push(entry);
@@ -89,7 +80,7 @@ const Sandbox = {
     this.sent = [];
   },
 
-   
+  /* ---------- Worker 生命周期 ---------- */
   _spawnWorker() {
     this._terminateWorker();
     const url = new URL("./sandbox-worker.js?v=5", import.meta.url);
@@ -108,7 +99,7 @@ const Sandbox = {
       } catch (_) {}
       this._worker = null;
     }
-     
+    // 清理未决请求
     for (const [, p] of this._pending) {
       clearTimeout(p.timer);
       p.reject(new Error("worker 已终止"));
@@ -132,7 +123,7 @@ const Sandbox = {
       if (msg.state === "ready") this.booted = true;
       return;
     }
-     
+    // 请求响应
     if (msg.id != null && this._pending.has(msg.id)) {
       const p = this._pending.get(msg.id);
       this._pending.delete(msg.id);
@@ -156,7 +147,7 @@ const Sandbox = {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pending.delete(id);
-         
+        // 超时：终止并重建 worker（下次调用重新 boot）
         this._pushLog("err", op + " 超时（" + Math.round(timeoutMs / 1000) + "s），已终止 worker");
         this._terminateWorker();
         this._setState("error", "超时");
@@ -167,11 +158,11 @@ const Sandbox = {
     });
   },
 
-   
+  /* ---------- 公开 API ---------- */
 
-  
-
-
+  /**
+   * 启动（或复用已启动的）实例：下载运行时 → 安装依赖 → sdk.init()
+   */
   async boot() {
     if (this.booted && this._worker) return { ok: true, cached: true };
     if (
@@ -196,16 +187,16 @@ const Sandbox = {
     }
   },
 
-   
+  /** 若未启动则先启动 */
   async ensureBooted() {
     if (!this.booted) await this.boot();
   },
 
-  
-
-
-
-
+  /**
+   * 部署生成文件 → 重载模块 → 注入事件 → 返回运行报告
+   * @param {Object<string,string>} files 生成文件 {path: content}
+   * @param {Array<object>} [events] OneBot12 事件（缺省注入一条私信"你好"）
+   */
   async runTest(files, events) {
     await this.ensureBooted();
     const evs = this.normalizeEvents(events);
@@ -220,7 +211,7 @@ const Sandbox = {
     return report;
   },
 
-   
+  /** 注入单条模拟事件（用户手动） */
   async sendUserEvent(textOrEvent) {
     await this.ensureBooted();
     const evs = this.normalizeEvents(textOrEvent);
@@ -234,7 +225,7 @@ const Sandbox = {
     return result;
   },
 
-   
+  /** 实例内执行任意 Python（await 可用），返回 {result, logs} */
   async exec(code) {
     await this.ensureBooted();
     this._setState("busy", "执行 Python…");
@@ -243,7 +234,7 @@ const Sandbox = {
     return r;
   },
 
-   
+  /** micropip 安装额外纯 Python 依赖 */
   async install(packages) {
     await this.ensureBooted();
     this._setState("busy", "安装依赖…");
@@ -252,19 +243,19 @@ const Sandbox = {
     return r;
   },
 
-   
+  /** 停止并释放实例（终止 worker） */
   stop() {
     this._terminateWorker();
     this._setState("off", "");
     this.stageText = "";
   },
 
-  
-
-
-
-
-
+  /**
+   * 事件归一化：
+   *  - 字符串 → mock 平台私信文本事件
+   *  - 对象（可含 text/detail_type/platform）→ 补全 OneBot12 字段
+   *  - 数组 → 逐个补全
+   */
   normalizeEvents(input) {
     const fill = (ev) => {
       const now = Math.floor(Date.now() / 1000);

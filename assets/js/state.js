@@ -1,21 +1,17 @@
-
-
-
-
-
-
-
+/**
+ * ErisPulse Builder — 精简版共享状态
+ */
 
 import { CONFIG } from "./config.js";
 
- 
+// 用户设置（builder 配置存放于此）
 export const state = {
   userSettings: { ...CONFIG.DEFAULT_USER_SETTINGS },
 };
 
-
-
-
+/**
+ * 从 localStorage 读取用户设置并合并到 state.userSettings
+ */
 export function loadUserSettings() {
   try {
     const savedSettings = localStorage.getItem(CONFIG.STORAGE_KEYS.SETTINGS);
@@ -42,9 +38,9 @@ export function loadUserSettings() {
   }
 }
 
-
-
-
+/**
+ * 将 state.userSettings 写入 localStorage
+ */
 export function saveUserSettings() {
   try {
     state.userSettings.version = CONFIG.SETTINGS_VERSION;

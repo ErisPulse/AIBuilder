@@ -1,20 +1,16 @@
-
-
-
-
-
-
-
-
-
-
+/**
+ * ErisPulse Builder — 精简版国际化
+ *
+ * 仅保留 builder.* 文案以及 builder 间接依赖的少量通用键。
+ * 支持 5 种语言：zh-CN、en、zh-TW、ja、ru（缺失键回退到 zh-CN）。
+ */
 
 export const I18n = (function () {
   const STORAGE_KEY = "erispulse-builder-lang";
 
-  
-
-
+  /**
+   * 根据浏览器语言偏好检测默认语言
+   */
   function detectBrowserLang() {
     const langs = navigator.languages || [navigator.language || "zh-CN"];
     for (const lang of langs) {
@@ -155,13 +151,13 @@ export const I18n = (function () {
       "builder.upload.readFail": "读取文件失败：{name}",
       "builder.progress.request": "请求参数",
       "builder.progress.result": "返回结果",
-       
+      // 主题
       "builder.theme.auto": "跟随系统",
       "builder.theme.light": "浅色",
       "builder.theme.dark": "深色",
       "builder.oledToggle": "OLED 纯黑模式（暗色主题下生效）",
       "builder.webFetch.toggle": "允许 AI 联网请求（web_fetch）",
-       
+      // 欢迎页
       "builder.welcomeTitle": "ErisPulse Builder",
       "builder.welcomeSubtitle":
         "我是小eris，告诉我你想构建的模块或适配器，我来查文档、写代码，还能在浏览器里的真实 ErisPulse 实例中直接试运行。",
@@ -169,10 +165,10 @@ export const I18n = (function () {
       "builder.tip2": "写一个复读机模块，收到什么就回复什么",
       "builder.tip3": "帮我开发一个对接 OneBot v11 的适配器",
       "builder.tip4": "做一个关键词自动回复模块，支持多关键词组",
-       
+      // 复制
       "builder.copy": "复制",
       "builder.copied": "已复制",
-       
+      // 实例控制台（浏览器内 ErisPulse 沙箱）
       "builder.instance.title": "实例控制台",
       "builder.instance.openPanel": "实例控制台",
       "builder.instance.chipTitle":
@@ -225,7 +221,7 @@ export const I18n = (function () {
       "builder.tool.run_module": "实例试运行",
       "builder.tool.exec_python": "实例内执行",
       "builder.tool.install_packages": "安装依赖",
-       
+      // 新手引导
       "builder.onboarding.welcomeTitle": "欢迎使用 ErisPulse Builder",
       "builder.onboarding.welcomeDesc":
         "用自然语言描述需求，AI 会查阅 ErisPulse 官方文档，生成完整的模块/适配器代码，还能在浏览器内的真实 ErisPulse 实例中直接试运行。开始之前，先配置一个 OpenAI 兼容的模型 API。",
@@ -242,7 +238,7 @@ export const I18n = (function () {
       "builder.onboarding.testFail": "连接失败",
       "builder.onboarding.privacy":
         "全部数据仅存于浏览器 localStorage，不上传任何服务器。",
-       
+      // 通用键
       "common.loading": "加载中…",
       "nav.backHome": "返回 ErisPulse 官网",
       "nav.openSource": "GitHub",
@@ -398,13 +394,13 @@ export const I18n = (function () {
       "builder.upload.readFail": "Failed to read file: {name}",
       "builder.progress.request": "Request",
       "builder.progress.result": "Result",
-       
+      // Theme
       "builder.theme.auto": "System",
       "builder.theme.light": "Light",
       "builder.theme.dark": "Dark",
       "builder.oledToggle": "OLED pure black (applies in dark theme)",
       "builder.webFetch.toggle": "Allow AI web requests (web_fetch)",
-       
+      // Welcome hero
       "builder.welcomeTitle": "ErisPulse Builder",
       "builder.welcomeSubtitle":
         "I'm Xiaoeris. Tell me what module or adapter you want to build — I'll read the docs, write the code, and even test-run it in a real ErisPulse instance right inside your browser.",
@@ -412,10 +408,10 @@ export const I18n = (function () {
       "builder.tip2": "Write an echo module that replies with whatever it receives",
       "builder.tip3": "Help me develop an adapter for OneBot v11",
       "builder.tip4": "Make a keyword auto-reply module with multiple keyword groups",
-       
+      // Copy
       "builder.copy": "Copy",
       "builder.copied": "Copied",
-       
+      // Instance console (in-browser ErisPulse sandbox)
       "builder.instance.title": "Instance Console",
       "builder.instance.openPanel": "Instance Console",
       "builder.instance.chipTitle":
@@ -469,7 +465,7 @@ export const I18n = (function () {
       "builder.tool.run_module": "Test Run",
       "builder.tool.exec_python": "Exec in Instance",
       "builder.tool.install_packages": "Install Deps",
-       
+      // Onboarding
       "builder.onboarding.welcomeTitle": "Welcome to ErisPulse Builder",
       "builder.onboarding.welcomeDesc":
         "Describe what you need in plain language — the AI reads the official ErisPulse docs, generates complete module/adapter code, and can test-run it in a real in-browser ErisPulse instance. First, configure an OpenAI-compatible model API.",
@@ -635,13 +631,13 @@ export const I18n = (function () {
       "builder.upload.readFail": "讀取檔案失敗：{name}",
       "builder.progress.request": "請求參數",
       "builder.progress.result": "返回結果",
-       
+      // 主題
       "builder.theme.auto": "跟隨系統",
       "builder.theme.light": "淺色",
       "builder.theme.dark": "深色",
       "builder.oledToggle": "OLED 純黑模式（暗色主題下生效）",
       "builder.webFetch.toggle": "允許 AI 聯網請求（web_fetch）",
-       
+      // 歡迎頁
       "builder.welcomeTitle": "ErisPulse Builder",
       "builder.welcomeSubtitle":
         "我是小eris，告訴我你想構建的模組或適配器，我來查文件、寫程式碼，還能在瀏覽器裡的真實 ErisPulse 實例中直接試執行。",
@@ -649,10 +645,10 @@ export const I18n = (function () {
       "builder.tip2": "寫一個複讀機模組，收到什麼就回覆什麼",
       "builder.tip3": "幫我開發一個對接 OneBot v11 的適配器",
       "builder.tip4": "做一個關鍵字自動回覆模組，支援多關鍵字群組",
-       
+      // 複製
       "builder.copy": "複製",
       "builder.copied": "已複製",
-       
+      // 實例控制台（瀏覽器內 ErisPulse 沙箱）
       "builder.instance.title": "實例控制台",
       "builder.instance.openPanel": "實例控制台",
       "builder.instance.chipTitle":
@@ -705,7 +701,7 @@ export const I18n = (function () {
       "builder.tool.run_module": "實例試執行",
       "builder.tool.exec_python": "實例內執行",
       "builder.tool.install_packages": "安裝依賴",
-       
+      // 新手引導
       "builder.onboarding.welcomeTitle": "歡迎使用 ErisPulse Builder",
       "builder.onboarding.welcomeDesc":
         "用自然語言描述需求，AI 會查閱 ErisPulse 官方文件，生成完整的模組/適配器程式碼，還能在瀏覽器內的真實 ErisPulse 實例中直接試執行。開始之前，先設定一個 OpenAI 相容的模型 API。",
@@ -877,13 +873,13 @@ export const I18n = (function () {
       "builder.upload.readFail": "ファイルの読込に失敗しました：{name}",
       "builder.progress.request": "リクエスト",
       "builder.progress.result": "レスポンス",
-       
+      // テーマ
       "builder.theme.auto": "システムに従う",
       "builder.theme.light": "ライト",
       "builder.theme.dark": "ダーク",
       "builder.oledToggle": "OLED 純黒モード（ダークテーマ時有効）",
       "builder.webFetch.toggle": "AI の Web リクエストを許可（web_fetch）",
-       
+      // ウェルカム
       "builder.welcomeTitle": "ErisPulse Builder",
       "builder.welcomeSubtitle":
         "私は小eris。作りたいモジュールやアダプタを教えてください。ドキュメントを調べ、コードを書き、ブラウザ内の本物の ErisPulse インスタンスで直接テスト実行までできます。",
@@ -891,10 +887,10 @@ export const I18n = (function () {
       "builder.tip2": "受け取った内容をそのまま返すエコーモジュール",
       "builder.tip3": "OneBot v11 対応アダプタの開発を手伝って",
       "builder.tip4": "複数キーワードグループ対応の自動応答モジュール",
-       
+      // コピー
       "builder.copy": "コピー",
       "builder.copied": "コピーしました",
-       
+      // インスタンスコンソール（ブラウザ内 ErisPulse サンドボックス）
       "builder.instance.title": "インスタンスコンソール",
       "builder.instance.openPanel": "インスタンスコンソール",
       "builder.instance.chipTitle":
@@ -948,7 +944,7 @@ export const I18n = (function () {
       "builder.tool.run_module": "テスト実行",
       "builder.tool.exec_python": "インスタンス内実行",
       "builder.tool.install_packages": "依存関係インストール",
-       
+      // オンボーディング
       "builder.onboarding.welcomeTitle": "ErisPulse Builder へようこそ",
       "builder.onboarding.welcomeDesc":
         "自然言語で要件を説明すると、AI が ErisPulse 公式ドキュメントを調べ、完全なモジュール/アダプタコードを生成し、ブラウザ内の本物の ErisPulse インスタンスでテスト実行まで行います。まずは OpenAI 互換のモデル API を設定してください。",
@@ -1120,13 +1116,13 @@ export const I18n = (function () {
       "builder.upload.readFail": "Не удалось прочитать файл: {name}",
       "builder.progress.request": "Запрос",
       "builder.progress.result": "Результат",
-       
+      // Тема
       "builder.theme.auto": "Как в системе",
       "builder.theme.light": "Светлая",
       "builder.theme.dark": "Тёмная",
       "builder.oledToggle": "Чёрный режим OLED (действует в тёмной теме)",
       "builder.webFetch.toggle": "Разрешить веб-запросы ИИ (web_fetch)",
-       
+      // Приветствие
       "builder.welcomeTitle": "ErisPulse Builder",
       "builder.welcomeSubtitle":
         "Я Сяоэрис. Расскажите, какой модуль или адаптер нужно создать — я изучу документацию, напишу код и даже протестирую его в настоящем экземпляре ErisPulse прямо в браузере.",
@@ -1134,10 +1130,10 @@ export const I18n = (function () {
       "builder.tip2": "Эхо-модуль, который отвечает тем, что получил",
       "builder.tip3": "Помоги разработать адаптер для OneBot v11",
       "builder.tip4": "Модуль автоответа по ключевым словам с несколькими группами",
-       
+      // Копирование
       "builder.copy": "Копировать",
       "builder.copied": "Скопировано",
-       
+      // Консоль экземпляра (песочница ErisPulse в браузере)
       "builder.instance.title": "Консоль экземпляра",
       "builder.instance.openPanel": "Консоль экземпляра",
       "builder.instance.chipTitle":
@@ -1191,7 +1187,7 @@ export const I18n = (function () {
       "builder.tool.run_module": "Тестовый запуск",
       "builder.tool.exec_python": "Exec в экземпляре",
       "builder.tool.install_packages": "Установить зависимости",
-       
+      // Онбординг
       "builder.onboarding.welcomeTitle": "Добро пожаловать в ErisPulse Builder",
       "builder.onboarding.welcomeDesc":
         "Опишите задачу обычным языком — ИИ изучит официальную документацию ErisPulse, сгенерирует полный код модуля/адаптера и протестирует его в настоящем экземпляре ErisPulse в браузере. Для начала настройте API совместимой с OpenAI модели.",
@@ -1238,9 +1234,9 @@ export const I18n = (function () {
     },
   };
 
-  
-
-
+  /**
+   * 获取翻译文本
+   */
   function t(key, params) {
     const lang = currentLang;
     let text =
@@ -1273,9 +1269,9 @@ export const I18n = (function () {
     return true;
   }
 
-  
-
-
+  /**
+   * 应用翻译到所有带 data-i18n 属性的元素
+   */
   function applyTranslations() {
     document.querySelectorAll("[data-i18n]").forEach((el) => {
       const key = el.getAttribute("data-i18n");

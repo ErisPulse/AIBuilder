@@ -1,27 +1,17 @@
+/**
+ * ErisPulse Builder — 浏览器内 ErisPulse 实例（Web Worker）
+ *
+ * 协议（main → worker）：{id, op, payload}
+ * 协议（worker → main）：{id, ok, result|error} 与广播 {type: "log"|"progress"|"state"}
+ */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
+/* global loadPyodide */
 
 let pyodide = null;
 let booted = false;
-let booting = null;  
+let booting = null; // 并发 boot 去重
 let logBuffer = [];
-let deployedPkgs = [];  
+let deployedPkgs = []; // 已部署的生成包名（用于重载前清理 sys.modules）
 
 const MAX_LOGS = 600;
 const BOOT_TIMEOUT_NOTE = "（首次启动需下载约 20-40MB 运行时与依赖）";
@@ -77,7 +67,7 @@ const MOCK_ADAPTER_PY = [
   "",
 ].join("\n");
 
- 
+// Python 辅助函数（注入 pyodide 全局命名空间）
 const HELPERS_PY = [
   "import asyncio, importlib, inspect, json, sys, threading",
   "",
@@ -358,7 +348,7 @@ function state(name) {
   post({ type: "state", state: name });
 }
 
- 
+/* ================= Pyodide 加载（多 CDN 回退） ================= */
 
 async function loadRuntime(cdns) {
   let lastErr = null;
@@ -371,8 +361,7 @@ async function loadRuntime(cdns) {
       }
       pyodide = await loadPyodide({
         indexURL: base,
-         
-         
+        // 内置包（aiohttp/pydantic 等）与 lockfile 也从同一镜像拉取
         packageBaseUrl: base,
         lockFileURL: base + "pyodide-lock.json",
       });
@@ -385,7 +374,7 @@ async function loadRuntime(cdns) {
   throw lastErr || new Error("所有 Pyodide CDN 均不可达");
 }
 
- 
+/** 真正验证某个顶层包可导入（loadPackage 失败不抛错，须主动检查） */
 async function packageImportable(name) {
   try {
     return pyodide.runPython(
@@ -396,7 +385,7 @@ async function packageImportable(name) {
   }
 }
 
- 
+/* ================= Boot ================= */
 
 async function doBoot(payload) {
   if (booted) return { alreadyBooted: true };
@@ -405,22 +394,22 @@ async function doBoot(payload) {
     try {
       state("allocating");
       progress("space", "分配虚拟文件系统…");
-       
+      // 预留：真正的目录创建在 pyodide 就绪后进行
 
       state("downloading");
       if (pyodide) {
-         
+        // 重试场景：复用已下载的运行时
         log("sys", "复用已下载的 Pyodide 运行时");
       } else {
         await loadRuntime((payload && payload.cdns) || []);
       }
       log("sys", "Pyodide 运行时就绪（Python " + pyodide.runPython("import sys; sys.version.split()[0]") + "）");
 
-       
+      // stdout/stderr 重定向 → 日志流
       pyodide.setStdout({ batched: (s) => log("out", s) });
       pyodide.setStderr({ batched: (s) => log("err", s) });
 
-       
+      // 虚拟磁盘与配置目录
       state("allocating");
       progress("space", "创建虚拟磁盘与配置目录…");
       const FS = pyodide.FS;
@@ -431,13 +420,13 @@ async function doBoot(payload) {
       FS.writeFile("/builder/config/config.toml", CONFIG_TOML);
       FS.writeFile("/builder/plugins/ep_mock.py", MOCK_ADAPTER_PY);
 
-       
+      // 注入辅助函数：必须先于任何 _ep_* 调用（线程补丁与导入钩子也随之生效）
       pyodide.runPython(HELPERS_PY);
 
-       
-       
-       
-       
+      // 安装依赖：全部交给 micropip —— 发行版内的包（aiohttp/pydantic/rich/anyio/ssl…）
+      // 由 micropip 自动委托 loadPackage 从镜像加载，websockets 等不在发行版内的
+      // 走 PyPI 纯 Python wheel。切勿手动预加载 aiohttp/pydantic：
+      // 预加载会让 micropip 的事务解析出现"已安装版本冲突"而整体失败。
       state("installing");
       progress("pip", "准备 micropip…");
       await pyodide.loadPackage("micropip");
@@ -445,18 +434,17 @@ async function doBoot(payload) {
         "pip",
         "从 PyPI 安装 ErisPulse 及依赖 " + BOOT_TIMEOUT_NOTE,
       );
-       
-       
+      // 分两步装：纯依赖先行，ErisPulse 本体最后
       const depList = [
         "fastapi",
         "uvicorn",
         "rich",
-        "tomlclass<0.4",  
+        "tomlclass<0.4", // ErisPulse 约束 tomlclass<0.4,>=0.3.2；不锁会装上 0.4.0 导致冲突
         "aiosqlite",
         "websockets",
         "typing-inspection",
-        "sqlite3",  
-        "pygments",  
+        "sqlite3", // lockfile 包（stdlib zip 不含，需 loadPackage 委托）
+        "pygments", // lockfile 包（rich 的 lockfile depends 为空，需显式拉取）
       ];
       await pyodide.runPythonAsync(
         "await _ep_install(" + JSON.stringify(JSON.stringify(depList)) + ")",
@@ -465,7 +453,7 @@ async function doBoot(payload) {
       await pyodide.runPythonAsync('await _ep_install("ErisPulse")');
       log("sys", "ErisPulse 安装完成");
 
-       
+      // 导入验证（导入钩子已在注入 helpers 时安装，框架首次导入在此发生）
       const importCheck = await pyodide.runPythonAsync(
         "_ep_verify_imports()",
       );
@@ -478,7 +466,7 @@ async function doBoot(payload) {
       }
       log("sys", "依赖导入验证通过（含 ErisPulse 框架）");
 
-       
+      // 初始化框架
       state("installing");
       progress("sdk", "初始化 ErisPulse（加载模块与 MockAdapter）…");
       const ok = await pyodide.runPythonAsync("await _ep_boot()");
@@ -505,7 +493,7 @@ async function doBoot(payload) {
   return booting;
 }
 
- 
+/* ================= 部署与运行 ================= */
 
 function pyIdent(name) {
   return (
@@ -534,7 +522,7 @@ function writeDeployFiles(files) {
       .replace(/\\/g, "/")
       .replace(/^\.\//, "")
       .replace(/^\//, "");
-    if (norm.includes("..")) continue;  
+    if (norm.includes("..")) continue; // 防目录穿越
     const target = root + "/" + norm;
     const dir = target.slice(0, target.lastIndexOf("/"));
     try {
@@ -543,7 +531,7 @@ function writeDeployFiles(files) {
     FS.writeFile(target, String(content));
   }
 
-   
+  // 保证 __init__.py 存在（模板默认包含；缺失时兜底生成）
   try {
     FS.stat(root + "/__init__.py");
   } catch (_) {
@@ -580,7 +568,7 @@ async function doRun(payload) {
     progress("sdk", "部署生成文件…");
     const { pkg } = writeDeployFiles(files);
 
-    drainSent();  
+    drainSent(); // 清空旧记录
     const logStart = logBuffer.length;
 
     const ok = await pyodide.runPythonAsync(
@@ -708,7 +696,7 @@ async function doInstall(payload) {
   }
 }
 
- 
+/* ================= 消息分发 ================= */
 
 const OPS = {
   boot: doBoot,

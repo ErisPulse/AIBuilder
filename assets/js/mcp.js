@@ -1,21 +1,21 @@
-
-
-
-
-
-
+/**
+ * ErisPulse MCP 客户端（支持多 MCP 服务）
+ *
+ * 从用户配置的 mcpServers 中选取已启用的服务，按顺序尝试调用工具。
+ * 每个 URL 维护独立的 MCP 会话与速率控制。
+ */
 
 import { CONFIG } from "./config.js";
 
- 
-const connections = new Map();  
+// 每个 URL 的连接状态
+const connections = new Map(); // url → {sessionId, initialized, initPromise, recentTimestamps}
 const RATE_LIMIT = 45;
 const RATE_WINDOW = 60_000;
 let rpcId = 0;
 
-
-
-
+/**
+ * 获取当前已启用的 MCP 服务 URL 列表
+ */
 function getEnabledServers() {
   try {
     const raw = localStorage.getItem(CONFIG.STORAGE_KEYS.SETTINGS);
@@ -129,17 +129,15 @@ async function ensureInitialized(url) {
       capabilities: {},
       clientInfo: { name: "ErisPulse-AIBuilder", version: "1.0.0" },
     });
-    try {
-      await rpc(url, "notifications/initialized", {}, { notification: true });
-    } catch (e) {   }
+    // 不发送 notifications/initialized：该通知会触发无 CORS 头的 202 响应，浏览器报 CORS 错误
     conn.initialized = true;
   })();
   return conn.initPromise;
 }
 
-
-
-
+/**
+ * 调用工具：按顺序尝试所有已启用的 MCP 服务器
+ */
 async function callTool(name, args = {}) {
   const servers = getEnabledServers();
   if (servers.length === 0) {
@@ -159,7 +157,6 @@ async function callTool(name, args = {}) {
       return extractText(result.content);
     } catch (e) {
       lastError = e;
-       
     }
   }
   throw lastError || new Error("所有 MCP 服务器均不可用");

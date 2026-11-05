@@ -1,16 +1,12 @@
+/**
+ * ErisPulse Builder — 精简版通用 UI / 工具函数
+ */
 
-
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * 显示一条短暂的浮动提示消息
+ * @param {string} message
+ * @param {'success'|'error'|'warning'|'info'} type
+ */
 export function showMessage(message, type) {
   const existingMessage = document.querySelector(".message");
   if (existingMessage) {
@@ -62,9 +58,9 @@ export function showMessage(message, type) {
   }, 3000);
 }
 
-
-
-
+/**
+ * HTML 转义
+ */
 export function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, function (c) {
     return {
