@@ -37,13 +37,10 @@ export const CONFIG = {
 
   // 浏览器内 ErisPulse 实例（Pyodide 沙箱）
   SANDBOX: {
-    // Pyodide 固定版本；依次尝试多个 CDN（主站不可达时回退）
+    // Pyodide 固定版本；候选源依次尝试（首个为自托管精简发行版，见
+    // assets/vendor/pyodide/0.28.3/full/README.md，不再使用第三方 CDN）
     pyodideVersion: "v0.28.3",
-    cdnCandidates: [
-      "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/",
-      "https://fastly.jsdelivr.net/pyodide/v0.28.3/full/",
-      "https://gcore.jsdelivr.net/pyodide/v0.28.3/full/",
-    ],
+    cdnCandidates: ["./assets/vendor/pyodide/0.28.3/full/"],
     bootTimeoutMs: 600000, // 首次启动（下载运行时 + micropip 安装，慢网络可能数分钟）
     opTimeoutMs: 90000, // 单次操作（运行/执行/注入）
     maxLogLines: 600,

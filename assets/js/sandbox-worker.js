@@ -14,12 +14,15 @@ let logBuffer = [];
 let deployedPkgs = []; // 已部署的生成包名（用于重载前清理 sys.modules）
 
 const MAX_LOGS = 600;
-const BOOT_TIMEOUT_NOTE = "（首次启动需下载约 20-40MB 运行时与依赖）";
+const BOOT_TIMEOUT_NOTE = "（运行时已本地内置，首次启动仅需从 PyPI 安装约 5-10MB 纯 Python 依赖）";
 
 const CONFIG_TOML = [
   "# ErisPulse Builder 沙箱自动生成配置",
   "[ErisPulse.server]",
   "auto_start = false",
+  "",
+  "[ErisPulse.transcript]",
+  "enabled = false",
   "",
   "[ErisPulse.framework]",
   'plugins_dir = "plugins"',
@@ -69,7 +72,12 @@ const MOCK_ADAPTER_PY = [
 
 // Python 辅助函数（注入 pyodide 全局命名空间）
 const HELPERS_PY = [
-  "import asyncio, importlib, inspect, json, sys, threading",
+  "import asyncio, importlib, inspect, json, os, sys, threading",
+  "",
+  "# 必须在首次导入 ErisPulse 之前 chdir：ConfigManager 在导入时即按 CWD",
+  "# 解析 config/config.toml 绝对路径，晚了配置文件（含 auto_start=false 等",
+  "# 沙箱开关）将永远不会生效",
+  'os.chdir("/builder")',
   "",
   "",
   "def _ep_patch_threads():",
@@ -317,13 +325,13 @@ const HELPERS_PY = [
   "    import asyncio, json, micropip",
   "    packages = json.loads(packages_json)",
   "    last = None",
-  "    for attempt in range(3):",
+  "    for attempt in range(4):",
   "        try:",
   "            await micropip.install(packages, keep_going=True)",
   "            return True",
   "        except Exception as e:",
   "            last = e",
-  "            await asyncio.sleep(2 * (attempt + 1))",
+  "            await asyncio.sleep(2 * (2 ** attempt))",
   "    raise last",
   "",
 ].join("\n");
@@ -348,10 +356,13 @@ function state(name) {
   post({ type: "state", state: name });
 }
 
-/* ================= Pyodide 加载（多 CDN 回退） ================= */
+/* ================= Pyodide 加载（候选源回退） ================= */
+
+// 单个候选源的加载软超时：黑洞地址不再拖满整体 boot 超时
+const RUNTIME_SRC_TIMEOUT_MS = 150000;
 
 async function loadRuntime(cdns) {
-  let lastErr = null;
+  const attempts = [];
   for (const base of cdns) {
     try {
       progress("downloading", "Pyodide: " + base);
@@ -359,19 +370,37 @@ async function loadRuntime(cdns) {
       if (typeof loadPyodide !== "function") {
         throw new Error("loadPyodide unavailable from " + base);
       }
-      pyodide = await loadPyodide({
-        indexURL: base,
-        // 内置包（aiohttp/pydantic 等）与 lockfile 也从同一镜像拉取
-        packageBaseUrl: base,
-        lockFileURL: base + "pyodide-lock.json",
-      });
+      // 软超时：超时的加载结果作废，迟到值不覆盖后继源的赋值
+      pyodide = await Promise.race([
+        loadPyodide({
+          indexURL: base,
+          // 内置包（aiohttp/pydantic 等）与 lockfile 也从同一源拉取
+          packageBaseUrl: base,
+          lockFileURL: base + "pyodide-lock.json",
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("加载超时（" + RUNTIME_SRC_TIMEOUT_MS / 1000 + "s）")),
+            RUNTIME_SRC_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       return;
     } catch (e) {
-      lastErr = e;
-      log("err", "CDN 加载失败 " + base + " : " + (e && e.message));
+      attempts.push({ base, message: (e && e.message) || String(e) });
+      log("err", "运行时加载失败 " + base + " : " + (e && e.message));
     }
   }
-  throw lastErr || new Error("所有 Pyodide CDN 均不可达");
+  const detail = attempts
+    .map((a) => "- " + a.base + " : " + a.message)
+    .join("\n");
+  throw new Error(
+    "所有 Pyodide 运行时源均不可达（共 " +
+      attempts.length +
+      " 个）：\n" +
+      detail +
+      "\n请检查网络连接后重试。",
+  );
 }
 
 /** 真正验证某个顶层包可导入（loadPackage 失败不抛错，须主动检查） */
@@ -429,17 +458,33 @@ async function doBoot(payload) {
       // 预加载会让 micropip 的事务解析出现"已安装版本冲突"而整体失败。
       state("installing");
       progress("pip", "准备 micropip…");
-      await pyodide.loadPackage("micropip");
+      // micropip 自托管 lockfile 内就有，但首次拉取仍可能受网络抖动影响，加重试
+      let micropipErr = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await pyodide.loadPackage("micropip");
+          micropipErr = null;
+          break;
+        } catch (e) {
+          micropipErr = e;
+          if (attempt < 2) {
+            log("err", "micropip 加载失败，重试（" + (attempt + 1) + "/2）: " + (e && e.message));
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          }
+        }
+      }
+      if (micropipErr) throw micropipErr;
       progress(
         "pip",
         "从 PyPI 安装 ErisPulse 及依赖 " + BOOT_TIMEOUT_NOTE,
       );
       // 分两步装：纯依赖先行，ErisPulse 本体最后
+      // 注意：tomlclass 不在此预装——交给 ErisPulse 同一事务解析
+      // （ErisPulse 2.12+ 约束 tomlclass>=0.4,<0.5，旧钉 <0.4 会版本冲突）
       const depList = [
         "fastapi",
         "uvicorn",
         "rich",
-        "tomlclass<0.4", // ErisPulse 约束 tomlclass<0.4,>=0.3.2；不锁会装上 0.4.0 导致冲突
         "aiosqlite",
         "websockets",
         "typing-inspection",
@@ -450,7 +495,10 @@ async function doBoot(payload) {
         "await _ep_install(" + JSON.stringify(JSON.stringify(depList)) + ")",
       );
       log("sys", "纯依赖安装完成");
-      await pyodide.runPythonAsync('await _ep_install("ErisPulse")');
+      // 与上方 depList 相同的双重序列化：_ep_install 期望收到 JSON 文本
+      await pyodide.runPythonAsync(
+        "await _ep_install(" + JSON.stringify(JSON.stringify(["ErisPulse"])) + ")",
+      );
       log("sys", "ErisPulse 安装完成");
 
       // 导入验证（导入钩子已在注入 helpers 时安装，框架首次导入在此发生）

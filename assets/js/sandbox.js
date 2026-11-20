@@ -83,7 +83,7 @@ const Sandbox = {
   /* ---------- Worker 生命周期 ---------- */
   _spawnWorker() {
     this._terminateWorker();
-    const url = new URL("./sandbox-worker.js?v=5", import.meta.url);
+    const url = new URL("./sandbox-worker.js?v=9", import.meta.url);
     const worker = new Worker(url, { type: "classic" });
     worker.onmessage = (e) => this._onMessage(e.data);
     worker.onerror = (e) => {
@@ -173,9 +173,11 @@ const Sandbox = {
     }
     this.clearSent();
     try {
+      // 相对路径（自托管目录）→ 绝对 URL，供 Worker 内 importScripts / loadPyodide 使用
+      const cdns = SB.cdnCandidates.map((c) => new URL(c, location.href).href);
       await this._call(
         "boot",
-        { cdns: SB.cdnCandidates },
+        { cdns },
         SB.bootTimeoutMs,
       );
       this.booted = true;
@@ -257,21 +259,41 @@ const Sandbox = {
    *  - 数组 → 逐个补全
    */
   normalizeEvents(input) {
+    // 按 docs/zh-CN/standards/event-conversion.md：消息事件必须携带
+    // self{platform,user_id} / message_id / alt_message / user_id 等标准字段
     const fill = (ev) => {
       const now = Math.floor(Date.now() / 1000);
+      const rnd = Math.random().toString(36).slice(2, 8);
       const base = {
-        id: "evt_" + now + "_" + Math.random().toString(36).slice(2, 8),
+        id: "evt_" + now + "_" + rnd,
         time: now,
-        self_id: "mock_bot",
-        user_id: "sandbox_user",
+        self: { platform: "ep_mock", user_id: "mock_bot" },
         platform: "ep_mock",
         type: "message",
         detail_type: "private",
         sub_type: "friend",
+        user_id: "sandbox_user",
+        user_nickname: "沙箱用户",
+        message_id: "msg_" + now + "_" + rnd,
         message: [{ type: "text", data: { text: "" } }],
+        alt_message: "",
+      };
+      const deriveAlt = (msg) => {
+        if (typeof msg === "string") return msg;
+        if (Array.isArray(msg)) {
+          return msg
+            .map((seg) => {
+              const d = (seg && seg.data) || {};
+              return d.text || d.name || d.file_id || "";
+            })
+            .filter(Boolean)
+            .join(" ");
+        }
+        return "";
       };
       if (typeof ev === "string") {
         base.message[0].data.text = ev;
+        base.alt_message = ev;
         return base;
       }
       if (ev && typeof ev === "object") {
@@ -282,9 +304,11 @@ const Sandbox = {
         if (Array.isArray(merged.message) && merged.message.length === 0) {
           merged.message = [{ type: "text", data: { text: "" } }];
         }
+        if (!merged.alt_message) merged.alt_message = deriveAlt(merged.message);
         return merged;
       }
       base.message[0].data.text = String(ev);
+      base.alt_message = String(ev);
       return base;
     };
     if (Array.isArray(input)) return input.map(fill);

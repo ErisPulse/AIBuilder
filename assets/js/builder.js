@@ -656,14 +656,14 @@ const INSTANCE_TOOL_SCHEMAS = [
     function: {
       name: "install_packages",
       description:
-        "为实例安装额外的纯 Python 依赖（通过 micropip，从 PyPI 安装）。仅支持纯 Python 包或 Pyodide 内置包（如 matplotlib、Pillow、httpx）；含 C 扩展且非内置的包无法安装。",
+        "为实例安装额外的纯 Python 依赖（通过 micropip，从 PyPI 安装）。仅支持纯 Python 包（如 httpx、toml、yaml）；含 C 扩展的包（如 matplotlib、Pillow、numpy、pandas）在沙箱中暂不可用，若用户模块依赖此类包，直接告知用户无法在沙箱内试运行该依赖。",
       parameters: {
         type: "object",
         properties: {
           packages: {
             type: "array",
             items: { type: "string" },
-            description: "包名列表，如 [\"matplotlib\"]",
+            description: "包名列表，如 [\"httpx\"]",
           },
         },
         required: ["packages"],
