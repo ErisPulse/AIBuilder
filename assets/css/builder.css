@@ -202,6 +202,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 生成中的会话：标题旁呼吸圆点 */
+.builder-session-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--qvq-accent, #4aa3ff);
+  vertical-align: middle;
+  animation: builder-session-pulse 1.2s ease-in-out infinite;
+}
+@keyframes builder-session-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
 .builder-session-rename,
 .builder-session-del {
   flex: 0 0 auto;

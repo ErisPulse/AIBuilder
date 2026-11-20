@@ -737,13 +737,14 @@ const UPLOAD_TEXT_EXTS = [
 const UPLOAD_MAX_BYTES = 256 * 1024; // 单文件上限 256KB
 
 function resetGenerated() {
-  generatedFiles = {};
+  // 就地清空：保持与 session.generatedFiles 的引用共享
+  for (const k of Object.keys(generatedFiles)) delete generatedFiles[k];
   finalized = false;
 }
 
 function resetAll() {
   resetGenerated();
-  conversation = [];
+  conversation.length = 0; // 就地清空，保持引用共享
   phase = "plan";
   updatePhaseToggle();
   persistCurrentSession();
@@ -898,7 +899,9 @@ async function doWebFetch(args) {
   return out;
 }
 
-async function executeTool(name, args, ctx) {
+async function executeTool(name, args, ctx, gen) {
+  // gen：会话绑定上下文（见 send()），文件操作全部落在所属 session 上
+  const files = gen ? gen.files : generatedFiles;
   switch (name) {
     case "web_fetch": {
       return await doWebFetch(args);
@@ -924,8 +927,8 @@ async function executeTool(name, args, ctx) {
       const path = String(args.path || "").trim();
       if (!path) return "错误：缺少 path";
       if (typeof args.content !== "string") return "错误：content 必须为字符串";
-      pushFileSnapshot();
-      generatedFiles[path] = args.content;
+      pushFileSnapshot(files);
+      files[path] = args.content;
       return `已写入 ${path}（${args.content.length} 字符）`;
     }
     case "patch_file": {
@@ -934,11 +937,11 @@ async function executeTool(name, args, ctx) {
       const oldText = String(args.old_text || "");
       const newText = String(args.new_text || "");
       const replaceAll = !!args.replace_all;
-      if (!generatedFiles.hasOwnProperty(path))
+      if (!files.hasOwnProperty(path))
         return `错误：文件 ${path} 不存在。请先 write_file 创建或用 get_manifest 查看已有文件。`;
       if (oldText.trim().length < 4)
         return "错误：old_text 太短（至少需要 4 个非空白字符）以保证唯一定位。";
-      const content = generatedFiles[path];
+      const content = files[path];
       const matches = fuzzyFindAll(content, oldText);
       if (matches.length === 0)
         return `错误：在 ${path} 中未找到匹配片段。请用 read_file 查看当前内容后再试。`;
@@ -951,43 +954,40 @@ async function executeTool(name, args, ctx) {
         const m = toReplace[i];
         updated = updated.slice(0, m.start) + newText + updated.slice(m.end);
       }
-      pushFileSnapshot();
-      generatedFiles[path] = updated;
+      pushFileSnapshot(files);
+      files[path] = updated;
       return `已修改 ${path}：替换 ${toReplace.length} 处，现 ${updated.length} 字符。`;
     }
     case "read_file": {
       const path = String(args.path || "").trim();
       if (!path) return "错误：缺少 path";
-      if (!generatedFiles.hasOwnProperty(path))
-        return `错误：文件 ${path} 不存在。`;
-      return generatedFiles[path];
+      if (!files.hasOwnProperty(path)) return `错误：文件 ${path} 不存在。`;
+      return files[path];
     }
     case "delete_file": {
       const path = String(args.path || "").trim();
       if (!path) return "错误：缺少 path";
-      if (!generatedFiles.hasOwnProperty(path))
-        return `错误：文件 ${path} 不存在。`;
-      pushFileSnapshot();
-      delete generatedFiles[path];
+      if (!files.hasOwnProperty(path)) return `错误：文件 ${path} 不存在。`;
+      pushFileSnapshot(files);
+      delete files[path];
       return `已删除 ${path}。`;
     }
     case "get_manifest": {
-      const names = Object.keys(generatedFiles);
+      const names = Object.keys(files);
       if (names.length === 0) return "当前没有已生成文件。";
-      return names
-        .map((p) => `- ${p} (${generatedFiles[p].length} 字符)`)
-        .join("\n");
+      return names.map((p) => `- ${p} (${files[p].length} 字符)`).join("\n");
     }
     case "finalize": {
-      finalized = true;
+      if (gen) gen.finalized = true;
+      else finalized = true;
       return "已标记完成。";
     }
     case "run_module": {
-      if (Object.keys(generatedFiles).length === 0) {
+      if (Object.keys(files).length === 0) {
         return I18n.t("builder.instance.needFiles");
       }
       try {
-        const report = await Sandbox.runTest({ ...generatedFiles }, args.events);
+        const report = await Sandbox.runTest({ ...files }, args.events);
         return formatInstanceReport(report);
       } catch (e) {
         return (
@@ -1052,6 +1052,11 @@ async function executeTool(name, args, ctx) {
         String(args.message || "").trim() || I18n.t("builder.confirmStartMsg");
       const ok = await showConfirmModal(msg);
       if (ok) {
+        if (gen && gen.id !== activeSessionId) {
+          // 后台会话：只写所属 session，不动全局阶段 UI
+          gen.s.phase = "generate";
+          return "用户已确认开始，已切换到生成阶段。";
+        }
         switchPhase("generate", true);
         return "用户已确认开始，已切换到生成阶段。";
       }
@@ -1083,10 +1088,20 @@ function isStartCommand(text) {
   return false;
 }
 
-let activeAbort = null; // 当前生成的 AbortController（供「停止」按钮调用）
+/**
+ * 会话生成运行时注册表：sessionId -> run
+ * run = { abort, live: {raw, node}, pendingQ, s }
+ * 会话间完全独立：并行生成、切换不中断、停止只作用于所属会话。
+ */
+const runningGens = new Map();
 
-function stopGeneration() {
-  if (activeAbort) activeAbort.abort();
+function isGenerating(sessionId) {
+  return runningGens.has(sessionId);
+}
+
+function stopGeneration(sessionId) {
+  const run = runningGens.get(sessionId);
+  if (run) run.abort.abort();
 }
 
 /**
@@ -1095,26 +1110,26 @@ function stopGeneration() {
  * @param {function} onProgress 进度回调
  * @param {object} ctx 上下文（包含 askQuestions 等）
  * @param {Array<{name:string,content:string}>} [attachments] 附带的文件内容（不污染可见输入）
+ * @param {object} gen 会话绑定上下文 { id, s, conv, files }（数据直接读写所属 session，
+ *   与会话切换无关；见 send() 内构造）
  */
-async function runGeneration(requirement, onProgress, ctx, attachments) {
-  const tools = phase === "generate" ? getGenerateTools() : getPlanTools();
+async function runGeneration(requirement, onProgress, ctx, attachments, gen) {
+  const tools =
+    (gen.s.phase === "generate" ? getGenerateTools() : getPlanTools()).slice();
   const sysMsg = { role: "system", content: buildSystemPrompt() };
 
   // 拼接用户消息：可见文本 + 附带文件（作为上下文，不展示在输入框）
   const messageContent = buildMessageWithAttachments(requirement, attachments);
   const userMsg = { role: "user", content: messageContent };
 
-  const messages = [sysMsg, ...conversation, userMsg];
+  const messages = [sysMsg, ...gen.conv, userMsg];
   // 用户消息先入 conversation
-  conversation.push(userMsg);
+  gen.conv.push(userMsg);
 
   const MAX_ROUNDS = 30;
-  const abort = new AbortController();
-  activeAbort = abort;
-  const streamOpts = {
-    signal: abort.signal,
-    onDelta: (t) => onProgress({ type: "delta", text: t }),
-  };
+  // run 由 send() 创建并注册（同步），此处只使用
+  const run = runningGens.get(gen.id);
+  const abort = run ? run.abort : new AbortController();
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -1123,7 +1138,13 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
       onProgress({ type: "stream_start" });
       let assistantMsg;
       try {
-        assistantMsg = await chatStream(messages, tools, streamOpts);
+        assistantMsg = await chatStream(messages, tools, {
+          signal: abort.signal,
+          onDelta: (t) => {
+            if (run) run.live.raw += t;
+            onProgress({ type: "delta", text: t });
+          },
+        });
       } catch (e) {
         if (e && e.name === "AbortError") {
           // 中断：保留已流式输出的部分内容（无工具调用时才可安全入上下文）
@@ -1135,18 +1156,28 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
           ) {
             const pmsg = { role: "assistant", content: partial.content };
             messages.push(pmsg);
-            conversation.push(pmsg);
+            gen.conv.push(pmsg);
           }
           onProgress({ type: "stream_end", aborted: true });
           onProgress({ type: "aborted" });
-          return { files: { ...generatedFiles }, finalized, aborted: true };
+          return {
+            files: { ...gen.files },
+            finalized: gen.finalized,
+            aborted: true,
+          };
         }
         throw e;
       }
-      onProgress({ type: "stream_end" });
+      // 本条流式消息结束：把累计文本交给 UI 事件，清空在途状态
+      const streamedRaw = run ? run.live.raw : "";
+      if (run) {
+        run.live.raw = "";
+        run.live.node = null;
+      }
+      onProgress({ type: "stream_end", raw: streamedRaw });
 
       messages.push(assistantMsg);
-      conversation.push(assistantMsg);
+      gen.conv.push(assistantMsg);
 
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
         break;
@@ -1167,7 +1198,7 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
 
         let result;
         try {
-          result = await executeTool(fn, args, ctx);
+          result = await executeTool(fn, args, ctx, gen);
         } catch (e) {
           result = "工具执行出错: " + e.message;
         }
@@ -1181,16 +1212,17 @@ async function runGeneration(requirement, onProgress, ctx, attachments) {
           content: String(result),
         };
         messages.push(toolMsg);
-        conversation.push(toolMsg);
+        gen.conv.push(toolMsg);
       }
 
-      if (finalized) break;
+      if (gen.finalized) break;
     }
   } finally {
-    activeAbort = null;
+    runningGens.delete(gen.id);
+    gen.s.finalized = gen.finalized;
   }
 
-  return { files: { ...generatedFiles }, finalized };
+  return { files: { ...gen.files }, finalized: gen.finalized };
 }
 
 /* ============================================================
@@ -2110,13 +2142,14 @@ function updateFileList() {
   const names = Object.keys(generatedFiles);
   list.innerHTML = "";
   if (countEl) countEl.textContent = String(names.length);
+  // 实例控制台始终可点（启动实例不依赖生成文件）
+  if (sbBtn) sbBtn.disabled = false;
   if (names.length === 0) {
     const p = document.createElement("p");
     p.className = "builder-empty";
     p.textContent = I18n.t("builder.noFiles");
     list.appendChild(p);
     if (dlBtn) dlBtn.disabled = true;
-    if (sbBtn) sbBtn.disabled = true;
     if (viewAllBtn) viewAllBtn.style.display = "none";
     return;
   }
@@ -2136,7 +2169,6 @@ function updateFileList() {
     list.appendChild(item);
   }
   if (dlBtn) dlBtn.disabled = false;
-  if (sbBtn) sbBtn.disabled = false;
   if (viewAllBtn) {
     if (names.length > 3) {
       viewAllBtn.style.display = "flex";
@@ -2277,13 +2309,15 @@ function updateInputPlaceholder() {
  * 12. UI 事件绑定（setupBuilder）
  * ============================================================ */
 
-let sending = false;
-
-function setSending(v) {
-  sending = v;
+/**
+ * 发送按钮状态跟随「当前会话」的生成状态：
+ * 只有正在生成的会话里按钮才是停止态，其它会话正常可发送（支持并行生成）。
+ */
+function updateSendButtonState() {
   const btn = $("builder-send");
   if (!btn) return;
-  // 生成中按钮变「停止」图标；停止元素只注入一次
+  const active = isGenerating(activeSessionId);
+  // 停止元素只注入一次
   let stopEl = btn.querySelector(".builder-send-stop");
   if (!stopEl) {
     stopEl = document.createElement("span");
@@ -2291,10 +2325,43 @@ function setSending(v) {
     stopEl.innerHTML = icon("stop");
     btn.appendChild(stopEl);
   }
-  btn.classList.toggle("sending", v);
-  btn.title = v ? I18n.t("builder.stop") : "";
+  btn.classList.toggle("sending", active);
+  btn.title = active ? I18n.t("builder.stop") : "";
   // 生成中按钮保持可点击（充当停止键）
   btn.disabled = false;
+}
+
+/**
+ * ask_question 经生成注册表承载：切走会话后 Promise 不悬死，
+ * 切回时由 mountQuestionCard 重新挂载表单并接续同一个 resolve。
+ */
+function askQuestionsViaRun(sessionId, qs) {
+  return new Promise((resolve) => {
+    const run = runningGens.get(sessionId);
+    if (!run) {
+      resolve({});
+      return;
+    }
+    run.pendingQ = { qs, resolve };
+    if (sessionId === activeSessionId) mountQuestionCard(sessionId);
+  });
+}
+
+function mountQuestionCard(sessionId) {
+  const run = runningGens.get(sessionId);
+  if (!run || !run.pendingQ) return;
+  if (sessionId !== activeSessionId) return;
+  const messagesEl = $("builder-messages");
+  if (!messagesEl) return;
+  const { qs, resolve } = run.pendingQ;
+  renderQuestionForm(messagesEl, qs).then((answers) => {
+    const r = runningGens.get(sessionId);
+    const pending = r && r.pendingQ;
+    if (r) r.pendingQ = null;
+    // 仅当仍是同一轮提问时才 resolve（重新挂载会创建新的卡片 Promise）
+    if (pending) pending.resolve(answers);
+    else resolve(answers);
+  });
 }
 
 function bindConfigInputs() {
@@ -2566,9 +2633,9 @@ function bindChatActions() {
   const clearBtn = $("builder-clear");
 
   const send = async () => {
-    if (sending) {
-      // 生成中点击发送按钮 = 停止
-      stopGeneration();
+    // 当前会话生成中：发送按钮 = 停止该会话（其它会话不受影响）
+    if (isGenerating(activeSessionId)) {
+      stopGeneration(activeSessionId);
       return;
     }
     const text = ((input && input.value) || "").trim();
@@ -2599,6 +2666,16 @@ function bindChatActions() {
       return;
     }
 
+    // 会话绑定：本次生成的一切数据读写都落在所属 session 上
+    const genId = activeSessionId;
+    const s = genId ? sessions[genId] : null;
+    if (!genId || !s) {
+      showMessage(I18n.t("builder.error.noActiveSession"), "warning");
+      return;
+    }
+    if (!Array.isArray(s.conversation)) s.conversation = [];
+    if (!s.generatedFiles) s.generatedFiles = {};
+
     const messagesEl = $("builder-messages");
     activeMessagesEl = messagesEl;
     // 移除欢迎消息（整个气泡容器）
@@ -2620,14 +2697,9 @@ function bindChatActions() {
     }
 
     // 自动命名会话（首次发送时用首条消息）
-    if (
-      activeSessionId &&
-      sessions[activeSessionId] &&
-      sessions[activeSessionId].title === I18n.t("builder.newSession")
-    ) {
+    if (s.title === I18n.t("builder.newSession")) {
       const titleBase = text || pendingUploads.map((f) => f.name).join("、");
-      sessions[activeSessionId].title =
-        titleBase.slice(0, 24) + (titleBase.length > 24 ? "…" : "");
+      s.title = titleBase.slice(0, 24) + (titleBase.length > 24 ? "…" : "");
       renderSessionList();
     }
 
@@ -2639,59 +2711,75 @@ function bindChatActions() {
     appendMessage(messagesEl, "user", text, attachments);
     input.value = "";
     if (input.style) input.style.height = "";
-    setSending(true);
+
+    // gen 上下文：conv/files 直接引用 session 字段，后台在途写入与切换无关
+    const gen = {
+      id: genId,
+      s,
+      conv: s.conversation,
+      files: s.generatedFiles,
+      finalized: s.finalized,
+    };
+    // 注册运行时（同步），驱动停止按钮与会话列表标记
+    runningGens.set(genId, {
+      abort: new AbortController(),
+      live: { raw: "", node: null },
+      pendingQ: null,
+      s,
+    });
+    updateSendButtonState();
+    renderSessionList();
     showTyping(messagesEl);
 
     try {
-      const ctx = {
-        askQuestions: (qs) => renderQuestionForm(messagesEl, qs),
-      };
+      const ctx = { askQuestions: (qs) => askQuestionsViaRun(genId, qs) };
       let currentProgressWrap = null; // 跟踪当前工具调用的进度条目（供展开详情）
-      // 流式气泡状态（stream_start → delta… → stream_end）
-      let liveMsgContent = null;
-      let liveTextEl = null;
-      let liveRaw = "";
-      const liveReset = () => {
-        liveMsgContent = null;
-        liveTextEl = null;
-        liveRaw = "";
-      };
       await runGeneration(
         text,
         (event) => {
-          hideTyping(messagesEl);
+          // 后台会话：数据照常落库，DOM 渲染全部跳过（切回时 renderHistory
+          // 重建已落库内容，流式气泡由 live 状态回填续接）
+          const visible = gen.id === activeSessionId;
+          const run = runningGens.get(gen.id);
           if (event.type === "stream_start") {
-            liveReset();
+            if (visible) hideTyping(messagesEl);
           } else if (event.type === "delta") {
-            if (!liveMsgContent) {
-              liveMsgContent = appendMessage(messagesEl, "bot", "");
-              liveMsgContent.classList.add("streaming");
-              liveTextEl = document.createElement("div");
-              liveTextEl.className = "builder-msg-stream-text";
-              liveMsgContent.appendChild(liveTextEl);
+            if (!visible) return;
+            // 节点被切换/重渲染销毁后自动重建并回填累计文本
+            if (!run.live.node || !run.live.node.isConnected) {
+              const bubble = appendMessage(messagesEl, "bot", "");
+              bubble.classList.add("streaming");
+              const textEl = document.createElement("div");
+              textEl.className = "builder-msg-stream-text";
+              bubble.appendChild(textEl);
+              run.live.node = textEl;
             }
-            liveRaw += event.text || "";
-            liveTextEl.textContent = liveRaw;
+            run.live.node.textContent = run.live.raw;
             scrollToBottom(messagesEl);
           } else if (event.type === "stream_end") {
-            if (liveMsgContent) {
-              if (liveRaw.trim()) {
-                liveMsgContent.classList.remove("streaming");
-                liveMsgContent.innerHTML = renderMarkdown(liveRaw);
-                enhanceMarkdownContainer(liveMsgContent);
-              } else {
-                const wrap = liveMsgContent.closest(".builder-msg");
-                if (wrap) wrap.remove();
+            if (visible && run.live.node) {
+              const bubble = run.live.node.closest(".builder-msg");
+              if (bubble) {
+                if (event.raw && event.raw.trim()) {
+                  bubble.classList.remove("streaming");
+                  bubble.innerHTML = renderMarkdown(event.raw);
+                  enhanceMarkdownContainer(bubble);
+                } else {
+                  bubble.remove();
+                }
               }
-              liveReset();
+              run.live.node = null;
             }
-            if (!event.aborted) showTyping(messagesEl);
+            if (visible && !event.aborted) showTyping(messagesEl);
           } else if (event.type === "aborted") {
-            appendSystemMessage(messagesEl, I18n.t("builder.stopped"));
+            if (visible) {
+              appendSystemMessage(messagesEl, I18n.t("builder.stopped"));
+            }
           } else if (event.type === "tool") {
+            if (visible) hideTyping(messagesEl);
             if (event.tool === "ask_question") {
-              // 问题表单由工具内部渲染，不重复显示进度行
-            } else {
+              // 问题表单经注册表挂载，不重复显示进度行
+            } else if (visible) {
               const label = toolLabel(event.tool);
               const detail = escapeHtml(
                 formatToolDetail(event.tool, event.args),
@@ -2727,8 +2815,8 @@ function bindChatActions() {
           } else if (event.type === "tool_result") {
             if (event.tool === "ask_question") {
               // 用户已作答，显示打字指示等待下一轮
-              showTyping(messagesEl);
-            } else {
+              if (visible) showTyping(messagesEl);
+            } else if (visible) {
               const wrap = currentProgressWrap;
               const last = wrap && wrap.querySelector(".builder-progress-item");
               if (last) {
@@ -2762,31 +2850,47 @@ function bindChatActions() {
                 );
               }
             }
-            if (event.tool === "write_file" || event.tool === "finalize") {
+            if (
+              (event.tool === "write_file" || event.tool === "finalize") &&
+              visible
+            ) {
               updateFileList();
             }
           }
         },
         ctx,
         attachments,
+        gen,
       );
-      hideTyping(messagesEl);
-      if (finalized) {
-        appendProgress(
-          messagesEl,
-          "done",
-          icon("check") + " " + escapeHtml(I18n.t("builder.done")),
-        );
+      if (gen.id === activeSessionId) {
+        hideTyping(messagesEl);
+        if (gen.finalized) {
+          appendProgress(
+            messagesEl,
+            "done",
+            icon("check") + " " + escapeHtml(I18n.t("builder.done")),
+          );
+        }
       }
     } catch (e) {
-      hideTyping(messagesEl);
-      appendMessage(messagesEl, "bot", "**" + escapeHtml(e.message) + "**");
+      if (gen.id === activeSessionId) {
+        hideTyping(messagesEl);
+        appendMessage(messagesEl, "bot", "**" + escapeHtml(e.message) + "**");
+      } else {
+        showMessage(e.message, "error");
+      }
     } finally {
-      hideTyping(messagesEl);
-      setSending(false);
-      updateFileList();
-      persistCurrentSession();
+      // 数据落盘到所属会话（conv/files 引用共享已同步，此处同步标量）
+      s.finalized = gen.finalized;
+      s.updatedAt = Date.now();
+      saveSessions();
+      if (gen.id === activeSessionId) {
+        finalized = gen.finalized;
+        hideTyping(messagesEl);
+        updateFileList();
+      }
       renderSessionList();
+      updateSendButtonState();
     }
   };
 
@@ -2803,14 +2907,14 @@ function bindChatActions() {
     });
     // 根据 sendMode 决定发送/换行键位
     input.addEventListener("keydown", (e) => {
-      // 生成中按 Esc 停止
-      if (e.key === "Escape" && sending) {
+      // 当前会话生成中按 Esc 停止
+      if (e.key === "Escape" && isGenerating(activeSessionId)) {
         e.preventDefault();
-        stopGeneration();
+        stopGeneration(activeSessionId);
         return;
       }
       if (e.key !== "Enter") return;
-      if (sending) return; // 生成中 Enter 不触发发送（停止请用按钮或 Esc）
+      if (isGenerating(activeSessionId)) return; // 生成中 Enter 不触发发送（停止请用按钮或 Esc）
       const isCtrl = e.ctrlKey || e.metaKey;
       if (sendMode === "ctrlEnter") {
         // Ctrl+Enter 发送，纯 Enter 换行
@@ -2977,6 +3081,11 @@ function saveSessions() {
   }
 }
 
+/**
+ * 把 session 数据绑定进内存视图。conversation/generatedFiles 与 session
+ * 字段【共享同一引用】——后台在途生成通过 gen 上下文直接写 session 对象，
+ * 切换会话后即时可见，persist 也无需拷贝回写。
+ */
 function applySessionToMemory(s) {
   var raw = Array.isArray(s.conversation) ? s.conversation : [];
   // 迁移旧版会话（用户消息在末尾 → 用户消息在对应回复前方）
@@ -2992,8 +3101,13 @@ function applySessionToMemory(s) {
     }
   }
   migrated.push.apply(migrated, buffer);
-  conversation = migrated;
-  generatedFiles = { ...(s.generatedFiles || {}) };
+  // 就地重排，保持数组引用稳定：在途生成的 gen.conv 依赖此引用不断链
+  raw.length = 0;
+  raw.push.apply(raw, migrated);
+  s.conversation = raw;
+  if (!s.generatedFiles) s.generatedFiles = {};
+  conversation = s.conversation;
+  generatedFiles = s.generatedFiles;
   phase = s.phase === "generate" ? "generate" : "plan";
   finalized = !!s.finalized;
 }
@@ -3001,8 +3115,7 @@ function applySessionToMemory(s) {
 function persistCurrentSession() {
   if (!activeSessionId || !sessions[activeSessionId]) return;
   const s = sessions[activeSessionId];
-  s.conversation = conversation;
-  s.generatedFiles = { ...generatedFiles };
+  // conversation/generatedFiles 与 s 共享引用，此处仅同步标量与时间戳
   s.phase = phase;
   s.finalized = finalized;
   s.updatedAt = Date.now();
@@ -3017,21 +3130,30 @@ let fileUndoStack = []; // 每项: { files: {...} }
 let fileRedoStack = [];
 
 /**
- * 在文件变更前快照当前状态（推入 undo 栈，清空 redo）
+ * 在文件变更前快照状态（推入 undo 栈，清空 redo）
+ * @param {Object<string,string>} [files] 被快照的对象；缺省为当前会话视图。
+ *   生成路径传入 gen.files，确保后台会话的快照不会拍到别的会话。
  */
-function pushFileSnapshot() {
-  fileUndoStack.push({ files: { ...generatedFiles } });
+function pushFileSnapshot(files) {
+  const src = files || generatedFiles;
+  fileUndoStack.push({ files: { ...src } });
   fileRedoStack = [];
   // 限制历史长度
   if (fileUndoStack.length > 50) fileUndoStack.shift();
   updateUndoRedoUI();
 }
 
+// 就地用 snap.files 覆盖 generatedFiles（保持与 session 的引用共享）
+function applyFileSnapshot(snapFiles) {
+  for (const k of Object.keys(generatedFiles)) delete generatedFiles[k];
+  Object.assign(generatedFiles, snapFiles);
+}
+
 function undoFiles() {
   if (fileUndoStack.length === 0) return;
   const snap = fileUndoStack.pop();
   fileRedoStack.push({ files: { ...generatedFiles } });
-  generatedFiles = snap.files;
+  applyFileSnapshot(snap.files);
   finalized = false;
   persistCurrentSession();
   updateFileList();
@@ -3043,7 +3165,7 @@ function redoFiles() {
   if (fileRedoStack.length === 0) return;
   const snap = fileRedoStack.pop();
   fileUndoStack.push({ files: { ...generatedFiles } });
-  generatedFiles = snap.files;
+  applyFileSnapshot(snap.files);
   persistCurrentSession();
   updateFileList();
   updateUndoRedoUI();
@@ -3180,6 +3302,8 @@ function exportSessions(scope) {
  */
 async function importSessionsFromFile(file) {
   if (!file) return;
+  // 导入会整体替换会话列表，先中止所有在途生成
+  for (const run of runningGens.values()) run.abort.abort();
   let text;
   try {
     text = await file.text();
@@ -3273,6 +3397,7 @@ function newSession() {
   updatePhaseToggle();
   resetUndoRedo();
   renderSessionList();
+  updateSendButtonState();
 }
 
 function switchSession(id) {
@@ -3280,7 +3405,6 @@ function switchSession(id) {
   if (!s) return;
   activeSessionId = id;
   applySessionToMemory(s);
-  s.conversation = conversation; // 保留迁移结果
   saveSessions();
   const messagesEl = $("builder-messages");
   activeMessagesEl = messagesEl;
@@ -3289,11 +3413,16 @@ function switchSession(id) {
   updatePhaseToggle();
   resetUndoRedo();
   renderSessionList();
+  updateSendButtonState();
+  // 切回正在生成的会话的 typing/流式回填/提问挂载由 renderHistory 统一处理
   // 切换会话时清除未发送的附件
   clearPendingUploads();
 }
 
-function deleteSession(id) {
+async function deleteSession(id) {
+  // 删除生成中的会话：中止其生成（写入孤儿对象无害，registry 自行清理）
+  const run = runningGens.get(id);
+  if (run) run.abort.abort();
   delete sessions[id];
   if (activeSessionId === id) {
     const ids = Object.keys(sessions);
@@ -3311,6 +3440,8 @@ function deleteSession(id) {
 async function clearAllSessions() {
   const ok = await showConfirmModal(I18n.t("builder.clearAllConfirm"));
   if (!ok) return;
+  // 清空前中止所有在途生成
+  for (const run of runningGens.values()) run.abort.abort();
   sessions = {};
   saveSessions();
   newSession();
@@ -3402,6 +3533,13 @@ function renderSessionList() {
       const title = document.createElement("span");
       title.className = "builder-session-title";
       title.textContent = s.title || I18n.t("builder.newSession");
+      // 生成中的会话：标题旁加呼吸圆点标记
+      if (isGenerating(id)) {
+        const dot = document.createElement("span");
+        dot.className = "builder-session-dot";
+        dot.title = I18n.t("builder.sessionGenerating");
+        title.appendChild(dot);
+      }
       const rename = document.createElement("button");
       rename.type = "button";
       rename.className = "builder-session-rename";
@@ -3593,6 +3731,23 @@ function renderHistory(messagesEl) {
       "done",
       icon("check") + " " + escapeHtml(I18n.t("builder.done")),
     );
+  }
+  // 切回正在生成的会话：显示 typing，回填在途流式文本，续接提问表单
+  const run = isGenerating(activeSessionId)
+    ? runningGens.get(activeSessionId)
+    : null;
+  if (run) {
+    showTyping(messagesEl);
+    if (run.live.raw && !run.live.node) {
+      const bubble = appendMessage(messagesEl, "bot", "");
+      bubble.classList.add("streaming");
+      const textEl = document.createElement("div");
+      textEl.className = "builder-msg-stream-text";
+      textEl.textContent = run.live.raw;
+      bubble.appendChild(textEl);
+      run.live.node = textEl;
+    }
+    mountQuestionCard(activeSessionId);
   }
   updateEmptyState();
   scrollToBottom(messagesEl);
